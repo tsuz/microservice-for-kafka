@@ -70,8 +70,21 @@ endpoints:
   description: `/flights` returns all latest loctions of flights
   topic: flight-location
 
+```
 
+**Input**
 
+Produce to `flight-location` topic:
+
+```sh
+kafka-console-producer \
+  --property "key.separator=;" \
+  --property "parse.key=true" \
+  --bootstrap-server localhost:9092 \
+  --topic flight-location
+
+> NH1;{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
+> NH2;{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3 }
 ```
 
 **Output**
