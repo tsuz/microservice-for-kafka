@@ -14,29 +14,62 @@ Key motivations for this project:
 
 ## Features
 
-- [ ] Endpoints
-  - [ ] GET all keys
-  - [ ] Get single key
-  - [ ] Get single key between
-  - [ ] Get single key between
+**API Endpoint Type**
+
+| Endpoint type | Status |
+|--|--|
+| List all items | ✅
+| Get single item | ✅
+
+
+**Data Store Types**
+
+| Store | Comment | Status 
+|--|--|--|
+| latest | Maintain latest value for key | ✅
+| appendValue | Appends value for key | ✅
+
+**Data Type (Key)**
+| Data Type | Status |
+|--|--|
+| String | ✅
+| Int | 
+
+
+**Data Type (Value)**
+| Data Type | Status |
+|--|--|
+| String (JSON) | ✅
+| String | 
+| JSON Schema | 
+| Avro Schema |
+
 
 ## Example
+
+### List all endpoint
 
 **Config**
 
 ```yaml
 
----
 kafka:
-  default:
-    bootstrap.servers:
-      
+  bootstrap.servers:
+  application.id: kafka-streams-101
+  bootstrap.servers: localhost:9092
+
+  key.serializer: org.apache.kafka.common.serialization.StringSerializer
+  value.serializer: org.apache.kafka.common.serialization.StringSerializer
+
+  metrics.recording.level: DEBUG
+
 endpoints:
 - name: flights
-  action: getAll
+  action: listAll
   datastore: latest # stores latest value for key
   description: `/flights` returns all latest loctions of flights
   topic: flight-location
+
 
 
 ```
@@ -54,3 +87,6 @@ Response:
   ]
 ```
 
+## Datastores
+
+### latest

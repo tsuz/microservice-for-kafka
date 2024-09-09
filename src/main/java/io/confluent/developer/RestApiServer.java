@@ -2,6 +2,8 @@ package io.confluent.developer;
 
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpHandler;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import org.apache.kafka.streams.KafkaStreams;
@@ -68,8 +70,8 @@ public class RestApiServer {
             String response;
             int statusCode;
 
-            if ("getAll".equals(endpoint.getAction())) {
-                response = getAllValues();
+            if ("listAll".equals(endpoint.getAction())) {
+                response = listAllValues();
                 statusCode = 200;
             } else if ("get".equals(endpoint.getAction())) {
                 Matcher matcher = idPattern.matcher(path);
@@ -92,14 +94,24 @@ public class RestApiServer {
             }
         }
 
-        private String getAllValues() throws IOException {
+        private String listAllValues() throws IOException {
             ReadOnlyKeyValueStore<String, String> keyValueStore =
                     streams.store(StoreQueryParameters.fromNameAndType(endpoint.getStoreName(), QueryableStoreTypes.keyValueStore()));
             
-            List<String> values = new ArrayList<>();
-            keyValueStore.all().forEachRemaining(entry -> values.add(entry.value));
+            List<JsonNode> jsonNodes = new ArrayList<>();
+            keyValueStore.all().forEachRemaining(entry -> {
+                try {
+                    // Parse each value as a JSON node
+                    JsonNode jsonNode = objectMapper.readTree(entry.value);
+                    jsonNodes.add(jsonNode);
+                } catch (JsonProcessingException e) {
+                    // If the value is not valid JSON, you might want to skip it or handle the error
+                    logger.error("Error parsing JSON value: " + entry.value, e);
+                }
+            });
             
-            return objectMapper.writeValueAsString(values);
+            // Convert the list of JsonNodes to a JSON array
+            return objectMapper.writeValueAsString(jsonNodes);
         }
 
         private String getValue(String id) {

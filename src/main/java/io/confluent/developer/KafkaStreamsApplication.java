@@ -1,6 +1,5 @@
 package io.confluent.developer;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
 import org.apache.kafka.streams.KafkaStreams;
@@ -11,16 +10,12 @@ import org.apache.kafka.streams.state.KeyValueBytesStoreSupplier;
 import org.apache.kafka.streams.state.Stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.FileInputStream;
-import java.io.InputStream;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
 
 public class KafkaStreamsApplication {
 
     private static final Logger logger = LoggerFactory.getLogger(KafkaStreamsApplication.class);
-    private static final ObjectMapper objectMapper = new ObjectMapper();
 
     static void runKafkaStreams(final KafkaStreams streams, Configuration config) {
         final CountDownLatch latch = new CountDownLatch(1);
@@ -59,31 +54,10 @@ public class KafkaStreamsApplication {
         for (Configuration.EndpointConfig endpoint : config.getEndpoints()) {
             KStream<String, String> stream = builder.stream(endpoint.getTopic(), Consumed.with(stringSerde, stringSerde));
 
-            if ("latest".equals(endpoint.getDatastore())) {
-                KeyValueBytesStoreSupplier storeSupplier = Stores.persistentKeyValueStore(endpoint.getStoreName());
-                stream.toTable(Materialized.<String, String>as(storeSupplier)
-                        .withKeySerde(stringSerde)
-                        .withValueSerde(stringSerde));
-            } else if ("appendValue".equals(endpoint.getDatastore())) {
-                KeyValueBytesStoreSupplier storeSupplier = Stores.persistentKeyValueStore(endpoint.getStoreName());
-                stream.groupByKey()
-                        .aggregate(
-                            () -> "[]",  // Initialize with an empty JSON array
-                            (key, value, aggregate) -> {
-                                try {
-                                    List<String> values = objectMapper.readValue(aggregate, List.class);
-                                    values.add(value);
-                                    return objectMapper.writeValueAsString(values);
-                                } catch (Exception e) {
-                                    logger.error("Error processing value", e);
-                                    return aggregate;
-                                }
-                            },
-                            Materialized.<String, String>as(storeSupplier)
-                                .withKeySerde(stringSerde)
-                                .withValueSerde(stringSerde)
-                        );
-            }
+            KeyValueBytesStoreSupplier storeSupplier = Stores.persistentKeyValueStore(endpoint.getStoreName());
+            stream.toTable(Materialized.<String, String>as(storeSupplier)
+                    .withKeySerde(stringSerde)
+                    .withValueSerde(stringSerde));
         }
 
         return builder.build();
@@ -94,15 +68,10 @@ public class KafkaStreamsApplication {
             throw new IllegalArgumentException("This program takes one argument: the path to a configuration file.");
         }
 
-        Configuration config = Configuration.fromFile(args[1]);
+        Configuration config = Configuration.fromFile(args[0]);
 
-        // Properties props = new Properties();
-        // props.putAll(config.getKafkaConfig());
-        
         Properties props = new Properties();
-        try (InputStream inputStream = new FileInputStream(args[0])) {
-            props.load(inputStream);
-        }
+        props.putAll(config.getKafkaConfig());
 
         KafkaStreams kafkaStreams = new KafkaStreams(buildTopology(config), props);
 
