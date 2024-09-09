@@ -100,6 +100,20 @@ Response:
   ]
 ```
 
-## Datastores
 
-### latest
+
+
+
+## How to Run
+
+### Build
+
+```sh
+./gradlew shadowJar
+```
+
+### Run
+
+```sh
+java  -jar build/libs/kafka-as-a-microservice-standalone-*.jar configuration/config.yaml
+```
