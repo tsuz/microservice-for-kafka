@@ -106,13 +106,44 @@ Response:
 
 ## How to Run
 
-### Build
+### 1. Create a configuration file
+
+```sh
+mkdir -p configuration
+vim configuration/config.yaml
+```
+
+Paste this to **config.yaml**
+```sh
+---
+kafka:
+  application.id: kafka-streams-101
+  bootstrap.servers: kafka:29092
+  metrics.recording.level: DEBUG
+ 
+endpoints:
+- name: flights
+  action: listAll
+  datastore: latest # stores latest value for key
+  description: # `/flights` returns all latest flights
+  topic: flight-location
+```
+
+### 2a. Run using Docker
+
+```sh
+docker-compose up -d
+```
+
+### 2b. Run locally
+
+#### Build
 
 ```sh
 ./gradlew shadowJar
 ```
 
-### Run
+#### Run
 
 ```sh
 java  -jar build/libs/kafka-as-a-microservice-standalone-*.jar configuration/config.yaml
