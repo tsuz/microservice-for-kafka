@@ -12,38 +12,59 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicReference;
 
 public class KafkaStreamsApplication {
 
     private static final Logger logger = LoggerFactory.getLogger(KafkaStreamsApplication.class);
+    private static final AtomicReference<RestApiServer> apiServerRef = new AtomicReference<>(null);
 
     static void runKafkaStreams(final KafkaStreams streams, Configuration config) {
         final CountDownLatch latch = new CountDownLatch(1);
+
         streams.setStateListener((newState, oldState) -> {
-            if (oldState == KafkaStreams.State.RUNNING && newState != KafkaStreams.State.RUNNING) {
+            logger.info("State transition from {} to {}", oldState, newState);
+            if (newState == KafkaStreams.State.RUNNING) {
+                startRestApiServer(streams, config);
+            } else if (oldState == KafkaStreams.State.RUNNING && newState != KafkaStreams.State.RUNNING) {
+                stopRestApiServer();
                 latch.countDown();
             }
         });
 
         streams.start();
 
-        // Start the REST API server
-        RestApiServer apiServer = new RestApiServer(streams, config, 7000);
-        try {
-            apiServer.start();
-        } catch (Exception e) {
-            logger.error("Failed to start REST API server", e);
-        }
-
         try {
             latch.await();
         } catch (final InterruptedException e) {
             throw new RuntimeException(e);
         } finally {
-            apiServer.stop();
+            stopRestApiServer();
         }
 
         logger.info("Streams Closed");
+    }
+
+    private static synchronized void startRestApiServer(KafkaStreams streams, Configuration config) {
+        if (apiServerRef.get() == null) {
+            RestApiServer apiServer = new RestApiServer(streams, config, 7001);
+            try {
+                apiServer.start();
+                apiServerRef.set(apiServer);
+                logger.info("REST API server started");
+            } catch (Exception e) {
+                logger.error("Failed to start REST API server", e);
+            }
+        }
+    }
+
+    private static synchronized void stopRestApiServer() {
+        RestApiServer apiServer = apiServerRef.get();
+        if (apiServer != null) {
+            apiServer.stop();
+            apiServerRef.set(null);
+            logger.info("REST API server stopped");
+        }
     }
 
     static Topology buildTopology(Configuration config) {
@@ -75,20 +96,11 @@ public class KafkaStreamsApplication {
 
         KafkaStreams kafkaStreams = new KafkaStreams(buildTopology(config), props);
 
-        // Start the REST API server
-        RestApiServer apiServer = new RestApiServer(kafkaStreams, config, 7001);
-        
         Runtime.getRuntime().addShutdownHook(new Thread(() -> {
             System.out.println("Shutting down the application...");
             kafkaStreams.close();
-            apiServer.stop();
+            stopRestApiServer();
         }));
-
-        try {
-            apiServer.start();
-        } catch (Exception e) {
-            logger.error("Failed to start REST API server", e);
-        }
 
         logger.info("Kafka Streams Application Started");
         runKafkaStreams(kafkaStreams, config);
