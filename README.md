@@ -34,6 +34,7 @@ Key motivations for this project:
 | Data Type | Status |
 |--|--|
 | String | ✅
+| Avro | ✅
 | Int | 
 
 
@@ -43,7 +44,7 @@ Key motivations for this project:
 | String (JSON) | ✅
 | String | 
 | JSON Schema | 
-| Avro Schema |
+| Avro Schema | ✅
 
 
 ## Example
@@ -59,8 +60,14 @@ kafka:
   application.id: kafka-streams-101
   bootstrap.servers: localhost:9092
 
+  # Serializer
   key.serializer: org.apache.kafka.common.serialization.StringSerializer
-  value.serializer: org.apache.kafka.common.serialization.StringSerializer
+  value.serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
+  
+  # Schema Registry Properties
+  schema.registry.url: http://localhost:8081
+  basic.auth.credentials.source: USER_INFO
+  basic.auth.user.info: username:password
 
   metrics.recording.level: DEBUG
 
@@ -70,6 +77,8 @@ endpoints:
   datastore: latest # stores latest value for key
   description: `/flights` returns all latest loctions of flights
   topic: flight-location
+  keySerializer: string
+  valueSerializer: avro
 
 ```
 

@@ -5,7 +5,15 @@ import com.sun.net.httpserver.HttpHandler;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.sun.net.httpserver.HttpExchange;
+
+import org.apache.avro.generic.GenericRecord;
+import org.apache.avro.io.DatumWriter;
+import org.apache.avro.io.EncoderFactory;
+import org.apache.avro.io.JsonEncoder;
+import org.apache.avro.specific.SpecificDatumWriter;
+import org.apache.commons.io.output.ByteArrayOutputStream;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StoreQueryParameters;
 import org.apache.kafka.streams.state.QueryableStoreTypes;
@@ -13,12 +21,11 @@ import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -71,7 +78,7 @@ public class RestApiServer {
             int statusCode;
 
             if ("listAll".equals(endpoint.getAction())) {
-                response = listAllValues();
+                response = getAllValues();
                 statusCode = 200;
             } else if ("get".equals(endpoint.getAction())) {
                 Matcher matcher = idPattern.matcher(path);
@@ -94,24 +101,48 @@ public class RestApiServer {
             }
         }
 
-        private String listAllValues() throws IOException {
-            ReadOnlyKeyValueStore<String, String> keyValueStore =
+        private String getAllValues() throws IOException {
+            ReadOnlyKeyValueStore<Object, Object> keyValueStore =
                     streams.store(StoreQueryParameters.fromNameAndType(endpoint.getStoreName(), QueryableStoreTypes.keyValueStore()));
-            
-            List<JsonNode> jsonNodes = new ArrayList<>();
+
+            ArrayNode jsonArray = objectMapper.createArrayNode();
+
             keyValueStore.all().forEachRemaining(entry -> {
                 try {
-                    // Parse each value as a JSON node
-                    JsonNode jsonNode = objectMapper.readTree(entry.value);
-                    jsonNodes.add(jsonNode);
-                } catch (JsonProcessingException e) {
-                    // If the value is not valid JSON, you might want to skip it or handle the error
-                    logger.error("Error parsing JSON value: " + entry.value, e);
+                    JsonNode jsonNode = serializeValue(entry.value, endpoint.getValueSerializer());
+                    jsonArray.add(jsonNode);
+                } catch (IOException e) {
+                    logger.error("Error serializing value: " + entry.value, e);
                 }
             });
-            
-            // Convert the list of JsonNodes to a JSON array
-            return objectMapper.writeValueAsString(jsonNodes);
+
+            return objectMapper.writeValueAsString(jsonArray);
+        }
+
+        private JsonNode serializeValue(Object value, String serializerType) throws IOException {
+            switch (serializerType.toLowerCase()) {
+                case "string":
+                    return objectMapper.readTree((String) value);
+                case "long":
+                case "integer":
+                case "int":
+                case "double":
+                case "float":
+                    return objectMapper.valueToTree(value);
+                case "byte":
+                case "bytes":
+                    return objectMapper.valueToTree(new String((byte[]) value, StandardCharsets.UTF_8));
+                case "avro":
+                    GenericRecord avroRecord = (GenericRecord) value;
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    JsonEncoder jsonEncoder = EncoderFactory.get().jsonEncoder(avroRecord.getSchema(), baos);
+                    DatumWriter<GenericRecord> writer = new SpecificDatumWriter<>(avroRecord.getSchema());
+                    writer.write(avroRecord, jsonEncoder);
+                    jsonEncoder.flush();
+                    return objectMapper.readTree(baos.toString());
+                default:
+                    throw new IllegalArgumentException("Unsupported serializer type: " + serializerType);
+            }
         }
 
         private String getValue(String id) {
