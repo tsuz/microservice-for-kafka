@@ -1,6 +1,5 @@
 package io.confluent.developer;
 
-import com.github.javafaker.Faker;
 import org.apache.kafka.clients.admin.AdminClient;
 import org.apache.kafka.clients.admin.DescribeTopicsResult;
 import org.apache.kafka.clients.admin.NewTopic;
@@ -34,20 +33,7 @@ public class Util implements AutoCloseable {
         }
 
         public void run() {
-            try (KafkaProducer producer = new KafkaProducer<String, String>(props)) {
-                Faker faker = new Faker();
-                while (!closed) {
-                    try {
-                        Object result = producer.send(new ProducerRecord<>(
-                                this.topic,
-                                faker.chuckNorris().fact())).get();
-                        Thread.sleep(5000);
-                    } catch (InterruptedException e) {
-                    }
-                }
-            } catch (Exception ex) {
-                logger.error(ex.toString());
-            }
+            
         }
         public void close()  {
             closed = true;

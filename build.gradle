@@ -39,10 +39,13 @@ dependencies {
            strictly '3.4.0'
         }
       }
-    implementation 'com.github.javafaker:javafaker:1.0.2'
+    implementation 'org.apache.avro:avro:1.11.0'
+    implementation 'io.confluent:kafka-streams-avro-serde:7.3.0'
+    implementation 'io.confluent:kafka-schema-registry-client:7.3.0'
+
     implementation 'com.fasterxml.jackson.dataformat:jackson-dataformat-xml:2.13.0'
     implementation 'org.json:json:20240303'
-
+    implementation 'io.confluent:kafka-schema-registry-client:7.7.0'
 
     testImplementation "org.apache.kafka:kafka-streams-test-utils:3.4.0"
     testImplementation "junit:junit:4.13.2"

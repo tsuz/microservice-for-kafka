@@ -5,10 +5,11 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import org.yaml.snakeyaml.Yaml;
 
 public class Configuration {
-    private Map<String, Object> kafkaConfig;
+    private Properties kafkaConfig;
     private List<EndpointConfig> endpoints;
 
     public static class EndpointConfig {
@@ -17,6 +18,8 @@ public class Configuration {
         private String datastore;
         private String description;
         private String topic;
+        private String keySerializer;
+        private String valueSerializer;
 
         public String getName() { return name; }
         public void setName(String name) { this.name = name; }
@@ -28,6 +31,10 @@ public class Configuration {
         public void setDescription(String description) { this.description = description; }
         public String getTopic() { return topic; }
         public void setTopic(String topic) { this.topic = topic; }
+        public String getKeySerializer() { return keySerializer; }
+        public void setKeySerializer(String keySerializer) { this.keySerializer = keySerializer; }
+        public String getValueSerializer() { return valueSerializer; }
+        public void setValueSerializer(String valueSerializer) { this.valueSerializer = valueSerializer; }
 
         public String getStoreName() {
             return name + "-" + datastore + "-store";
@@ -44,7 +51,11 @@ public class Configuration {
             Map<String, Object> data = yaml.load(input);
             
             Configuration config = new Configuration();
-            config.kafkaConfig = (Map<String, Object>) data.get("kafka");
+            Map<String, Object> kafkaConfigMap = (Map<String, Object>) data.get("kafka");
+            config.kafkaConfig = new Properties();
+            for (Map.Entry<String, Object> entry : kafkaConfigMap.entrySet()) {
+                config.kafkaConfig.put(entry.getKey(), entry.getValue().toString());
+            }
             
             List<Map<String, Object>> endpointsData = (List<Map<String, Object>>) data.get("endpoints");
             config.endpoints = new ArrayList<>();
@@ -55,6 +66,8 @@ public class Configuration {
                 endpoint.setDatastore((String) endpointData.get("datastore"));
                 endpoint.setDescription((String) endpointData.get("description"));
                 endpoint.setTopic((String) endpointData.get("topic"));
+                endpoint.setKeySerializer((String) endpointData.get("keySerializer"));
+                endpoint.setValueSerializer((String) endpointData.get("valueSerializer"));
                 config.endpoints.add(endpoint);
             }
             
@@ -62,6 +75,6 @@ public class Configuration {
         }
     }
 
-    public Map<String, Object> getKafkaConfig() { return kafkaConfig; }
+    public Properties getKafkaConfig() { return kafkaConfig; }
     public List<EndpointConfig> getEndpoints() { return endpoints; }
 }
