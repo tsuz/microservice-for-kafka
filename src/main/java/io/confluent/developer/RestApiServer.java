@@ -2,7 +2,6 @@ package io.confluent.developer;
 
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpHandler;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -46,8 +45,8 @@ public class RestApiServer {
 
     public void start() throws IOException {
         server = HttpServer.create(new InetSocketAddress(port), 0);
-        for (Configuration.EndpointConfig endpoint : config.getEndpoints()) {
-            server.createContext(endpoint.getEndpointPath(), new DynamicHandler(endpoint));
+        for (Configuration.PathConfig pathConfig : config.getPaths().values()) {
+            server.createContext(pathConfig.getPath(), new DynamicHandler(pathConfig));
         }
         server.setExecutor(null); // creates a default executor
         server.start();
@@ -61,12 +60,12 @@ public class RestApiServer {
     }
 
     private class DynamicHandler implements HttpHandler {
-        private final Configuration.EndpointConfig endpoint;
-        private final Pattern idPattern;
+        private final Configuration.PathConfig pathConfig;
+        // private final Pattern idPattern;
 
-        public DynamicHandler(Configuration.EndpointConfig endpoint) {
-            this.endpoint = endpoint;
-            this.idPattern = Pattern.compile(endpoint.getEndpointPath().replace("{id}", "(.+)"));
+        public DynamicHandler(Configuration.PathConfig pathConfig) {
+            this.pathConfig = pathConfig;
+            // this.idPattern = Pattern.compile(pathConfig.getPath().replace("{id}", "(.+)"));
         }
 
         @Override
@@ -77,39 +76,49 @@ public class RestApiServer {
             String response;
             int statusCode;
 
-            if ("listAll".equals(endpoint.getAction())) {
-                response = getAllValues();
-                statusCode = 200;
-            } else if ("get".equals(endpoint.getAction())) {
-                Matcher matcher = idPattern.matcher(path);
-                if (matcher.matches()) {
-                    String id = matcher.group(1);
-                    response = getValue(id);
-                    statusCode = (response != null) ? 200 : 404;
+            Configuration.MethodConfig methodConfig = pathConfig.getMethods().get("get");
+            if (methodConfig == null) {
+                response = "Method not supported";
+                statusCode = 405;
+            } else {
+                String queryMethod = methodConfig.getKafka().getQuery().getMethod();
+                if ("all".equals(queryMethod)) {
+                    response = getAllValues(methodConfig);
+                    statusCode = 200;
+                } else if ("get".equals(queryMethod)) {
+                    // Matcher matcher = idPattern.matcher(path);
+                    // if (matcher.matches()) {
+                    //     String id = matcher.group(1);
+                    //     response = getValue(id, methodConfig);
+                    //     statusCode = (response != null) ? 200 : 404;
+                    // } else {
+                        response = "Invalid ID";
+                        statusCode = 400;
+                    // }
                 } else {
-                    response = "Invalid ID";
+                    response = "Unsupported query method";
                     statusCode = 400;
                 }
-            } else {
-                response = "Unsupported action";
-                statusCode = 400;
             }
 
+            // Set the Content-Type header to application/json for all responses
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(statusCode, response.length());
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(response.getBytes(StandardCharsets.UTF_8));
             }
         }
 
-        private String getAllValues() throws IOException {
+        private String getAllValues(Configuration.MethodConfig methodConfig) throws IOException {
+            String storeName = methodConfig.getKafka().getTopic() + "-store";
             ReadOnlyKeyValueStore<Object, Object> keyValueStore =
-                    streams.store(StoreQueryParameters.fromNameAndType(endpoint.getStoreName(), QueryableStoreTypes.keyValueStore()));
+                    streams.store(StoreQueryParameters.fromNameAndType(storeName, QueryableStoreTypes.keyValueStore()));
 
             ArrayNode jsonArray = objectMapper.createArrayNode();
 
             keyValueStore.all().forEachRemaining(entry -> {
                 try {
-                    JsonNode jsonNode = serializeValue(entry.value, endpoint.getValueSerializer());
+                    JsonNode jsonNode = serializeValue(entry.value, methodConfig.getKafka().getSerializer().getValue());
                     jsonArray.add(jsonNode);
                 } catch (IOException e) {
                     logger.error("Error serializing value: " + entry.value, e);
@@ -145,11 +154,16 @@ public class RestApiServer {
             }
         }
 
-        private String getValue(String id) {
-            ReadOnlyKeyValueStore<String, String> keyValueStore =
-                    streams.store(StoreQueryParameters.fromNameAndType(endpoint.getStoreName(), QueryableStoreTypes.keyValueStore()));
-            String value = keyValueStore.get(id);
-            return (value != null) ? value : "Not found";
+        private String getValue(String id, Configuration.MethodConfig methodConfig) throws IOException {
+            String storeName = methodConfig.getKafka().getTopic() + "-store";
+            ReadOnlyKeyValueStore<Object, Object> keyValueStore =
+                    streams.store(StoreQueryParameters.fromNameAndType(storeName, QueryableStoreTypes.keyValueStore()));
+            Object value = keyValueStore.get(id);
+            if (value != null) {
+                JsonNode jsonNode = serializeValue(value, methodConfig.getKafka().getSerializer().getValue());
+                return objectMapper.writeValueAsString(jsonNode);
+            }
+            return null;
         }
     }
 }

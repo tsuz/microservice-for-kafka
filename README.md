@@ -20,7 +20,7 @@ Key motivations for this project:
 | Endpoint type | Status |
 |--|--|
 | List all items | ✅
-| Get single item | ✅
+| Get single item | 
 
 
 **Data Store Types**
@@ -71,14 +71,25 @@ kafka:
 
   metrics.recording.level: DEBUG
 
-endpoints:
-- name: flights
-  action: listAll
-  datastore: latest # stores latest value for key
-  description: `/flights` returns all latest loctions of flights
-  topic: flight-location
-  keySerializer: string
-  valueSerializer: avro
+
+paths:
+  /flights:
+    get:
+      description: Return all flights
+      kafka:
+        topic: my-avro
+        query:
+          method: all
+        serializer:
+          key: string
+          value: avro
+      responses:
+        '200':
+          description: A list of flights
+          content:
+            application/json:
+              schema:
+                type: array
 
 ```
 
