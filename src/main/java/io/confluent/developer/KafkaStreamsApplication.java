@@ -25,7 +25,8 @@ public class KafkaStreamsApplication {
     private static final Logger logger = LoggerFactory.getLogger(KafkaStreamsApplication.class);
     private static final AtomicReference<RestApiServer> apiServerRef = new AtomicReference<>(null);
     private static Configuration config;
-
+    private static Set<String> createdStores = new HashSet<>();
+    
     static void runKafkaStreams(final KafkaStreams streams) {
         final CountDownLatch latch = new CountDownLatch(1);
 
@@ -89,26 +90,37 @@ public class KafkaStreamsApplication {
     static Topology buildTopology(Configuration config) {
         StreamsBuilder builder = new StreamsBuilder();
 
-        for (Configuration.EndpointConfig endpoint : config.getEndpoints()) {
-            Class<?> keyClass = getClassForType(endpoint.getKeySerializer());
-            Class<?> valueClass = getClassForType(endpoint.getValueSerializer());
-            processEndpoint(builder, endpoint, keyClass, valueClass);
+        for (Configuration.PathConfig pathConfig : config.getPaths().values()) {
+            for (Configuration.MethodConfig methodConfig : pathConfig.getMethods().values()) {
+                Configuration.KafkaConfig kafkaConfig = methodConfig.getKafka();
+                Class<?> keyClass = getClassForType(kafkaConfig.getSerializer().getKey());
+                Class<?> valueClass = getClassForType(kafkaConfig.getSerializer().getValue());
+                processEndpoint(builder, pathConfig, methodConfig, keyClass, valueClass);
+            }
         }
         return builder.build();
     }
 
-    private static <K, V> void processEndpoint(StreamsBuilder builder, Configuration.EndpointConfig endpoint, Class<K> keyClass, Class<V> valueClass) {
-        Serde<K> keySerde = (Serde<K>) getSerdeForType(endpoint.getKeySerializer());
-        Serde<V> valueSerde = (Serde<V>) getSerdeForType(endpoint.getValueSerializer());
+    private static <K, V> void processEndpoint(StreamsBuilder builder, Configuration.PathConfig pathConfig, Configuration.MethodConfig methodConfig, Class<K> keyClass, Class<V> valueClass) {
+        Serde<K> keySerde = (Serde<K>) getSerdeForType(methodConfig.getKafka().getSerializer().getKey());
+        Serde<V> valueSerde = (Serde<V>) getSerdeForType(methodConfig.getKafka().getSerializer().getValue());
 
-        KStream<K, V> stream = builder.stream(endpoint.getTopic(), Consumed.with(keySerde, valueSerde));
+        String topic = methodConfig.getKafka().getTopic();
+        KStream<K, V> stream = builder.stream(topic, Consumed.with(keySerde, valueSerde));
 
-        KeyValueBytesStoreSupplier storeSupplier = Stores.persistentKeyValueStore(endpoint.getStoreName());
-
-        stream.toTable(Materialized.<K, V>as(storeSupplier)
-                .withKeySerde(keySerde)
-                .withValueSerde(valueSerde));
+        String storeName = topic + "-store";
+        if (!createdStores.contains(storeName)) {
+            KeyValueBytesStoreSupplier storeSupplier = Stores.persistentKeyValueStore(storeName);
+            stream.toTable(Materialized.<K, V>as(storeSupplier)
+                    .withKeySerde(keySerde)
+                    .withValueSerde(valueSerde));
+            createdStores.add(storeName);
+            logger.info("Created new state store: " + storeName);
+        } else {
+            logger.info("State store already exists: " + storeName + ". Skipping creation.");
+        }
     }
+
 
     private static Serde<?> getSerdeForType(String serializerType) {
         switch (serializerType.toLowerCase()) {
@@ -163,21 +175,29 @@ public class KafkaStreamsApplication {
             throw new IllegalArgumentException("This program takes one argument: the path to a configuration file.");
         }
 
-        Configuration configuration = Configuration.fromFile(args[0]);
-        config = configuration;
+        try {
+            Configuration configuration = Configuration.fromFile(args[0]);
+            config = configuration;
 
-        Properties props = new Properties();
-        props.putAll(config.getKafkaConfig());
+            Properties props = new Properties();
+            props.putAll(config.getKafkaConfig());
 
-        KafkaStreams kafkaStreams = new KafkaStreams(buildTopology(config), props);
+            KafkaStreams kafkaStreams = new KafkaStreams(buildTopology(config), props);
 
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            System.out.println("Shutting down the application...");
-            kafkaStreams.close();
-            stopRestApiServer();
-        }));
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                System.out.println("Shutting down the application...");
+                kafkaStreams.close();
+                stopRestApiServer();
+            }));
 
-        logger.info("Kafka Streams Application Started");
-        runKafkaStreams(kafkaStreams);
+            logger.info("Kafka Streams Application Started");
+            runKafkaStreams(kafkaStreams);
+        } catch (IllegalArgumentException e) {
+            logger.error("Configuration error: " + e.getMessage());
+            System.exit(1);
+        } catch (Exception e) {
+            logger.error("Error starting application", e);
+            System.exit(1);
+        }
     }
 }
