@@ -145,7 +145,6 @@ Response:
 
 
 
-
 ## How to Run
 
 ### 1. Create a configuration file
@@ -223,4 +222,13 @@ docker-compose up -d
 
 ```sh
 java  -jar build/libs/kafka-as-a-microservice-standalone-*.jar configuration/config.yaml
+```
+
+
+## Test
+
+Run below command to run unit tests.
+
+```
+gradle test
 ```
