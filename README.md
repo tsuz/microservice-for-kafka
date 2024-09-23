@@ -1,6 +1,6 @@
 # Kafka as a Microservice
 
-Streamline data delivery from Kafka topics to your clients with a flexible, last-mile microservice solution.
+Streamline data delivery from Kafka topics to your clients with a flexible, last-mile microservice solution using OpenAPI specification.
 
 ## Motivation
 
@@ -22,13 +22,6 @@ Key motivations for this project:
 | List all items | ✅
 | Get single item | ✅
 
-
-**Data Store Types**
-
-| Store | Comment | Status 
-|--|--|--|
-| latest | Maintain latest value for key | ✅
-| appendValue | Appends value for key | ✅
 
 **Data Type (Key)**
 | Data Type | Status |
