@@ -20,7 +20,7 @@ Key motivations for this project:
 | Endpoint type | Status |
 |--|--|
 | List all items | ✅
-| Get single item | 
+| Get single item | ✅
 
 
 **Data Store Types**
