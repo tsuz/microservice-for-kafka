@@ -34,7 +34,7 @@ Key motivations for this project:
 | Data Type | Status |
 |--|--|
 | String | ✅
-| Avro | ✅
+| Avro | 
 | Int | 
 
 
@@ -77,7 +77,7 @@ paths:
     get:
       description: Return all flights
       kafka:
-        topic: my-avro
+        topic: flight-location
         query:
           method: all
         serializer:
@@ -90,6 +90,27 @@ paths:
             application/json:
               schema:
                 type: array
+  /flights/{flightId}:
+    parameters:
+    - name: flightId
+      in: path
+      description: the flight identifier
+    get:
+      kafka:
+        topic: flight-location
+        serializer:
+          key: string
+          value: avro
+        query:
+          method: get
+          key: ${parameters.flightId}
+      responses:
+        '200':
+          description:
+          content:
+            application/json:
+              schema:
+                type: object
 
 ```
 
@@ -124,7 +145,6 @@ Response:
 
 
 
-
 ## How to Run
 
 ### 1. Create a configuration file
@@ -141,13 +161,47 @@ kafka:
   application.id: kafka-streams-101
   bootstrap.servers: kafka:29092
   metrics.recording.level: DEBUG
- 
-endpoints:
-- name: flights
-  action: listAll
-  datastore: latest # stores latest value for key
-  description: # `/flights` returns all latest flights
-  topic: flight-location
+
+paths:
+  /flights:
+    get:
+      description: Return all flights
+      kafka:
+        topic: flight-location
+        query:
+          method: all
+        serializer:
+          key: string
+          value: avro
+      responses:
+        '200':
+          description: A list of flights
+          content:
+            application/json:
+              schema:
+                type: array
+  /flights/{flightId}:
+    parameters:
+    - name: flightId
+      in: path
+      description: the flight identifier
+    get:
+      kafka:
+        topic: flight-location
+        serializer:
+          key: string
+          value: avro
+        query:
+          method: get
+          key: ${parameters.flightId}
+      responses:
+        '200':
+          description:
+          content:
+            application/json:
+              schema:
+                type: object
+
 ```
 
 ### 2a. Run using Docker
@@ -168,4 +222,13 @@ docker-compose up -d
 
 ```sh
 java  -jar build/libs/kafka-as-a-microservice-standalone-*.jar configuration/config.yaml
+```
+
+
+## Test
+
+Run below command to run unit tests.
+
+```
+gradle test
 ```

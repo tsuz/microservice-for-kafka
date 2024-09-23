@@ -27,6 +27,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import java.util.*;
 
 public class RestApiServer {
     private final KafkaStreams streams;
@@ -45,12 +46,13 @@ public class RestApiServer {
 
     public void start() throws IOException {
         server = HttpServer.create(new InetSocketAddress(port), 0);
-        for (Configuration.PathConfig pathConfig : config.getPaths().values()) {
-            server.createContext(pathConfig.getPath(), new DynamicHandler(pathConfig));
-        }
-        server.setExecutor(null); // creates a default executor
+        
+        // Create a single handler for all paths
+        server.createContext("/", new AllPathsHandler(config.getPaths()));
+        
+        server.setExecutor(null);
         server.start();
-        System.out.println("Server is listening on port " + port);
+        logger.info("Server is listening on port {}", port);
     }
 
     public void stop() {
@@ -59,49 +61,122 @@ public class RestApiServer {
         }
     }
 
-    private class DynamicHandler implements HttpHandler {
-        private final Configuration.PathConfig pathConfig;
-        // private final Pattern idPattern;
-
-        public DynamicHandler(Configuration.PathConfig pathConfig) {
-            this.pathConfig = pathConfig;
-            // this.idPattern = Pattern.compile(pathConfig.getPath().replace("{id}", "(.+)"));
+    private class AllPathsHandler implements HttpHandler {
+        private final List<PathHandler> pathHandlers;
+    
+        public AllPathsHandler(Map<String, Configuration.PathConfig> paths) {
+            this.pathHandlers = new ArrayList<>();
+            for (Map.Entry<String, Configuration.PathConfig> entry : paths.entrySet()) {
+                pathHandlers.add(new PathHandler(entry.getKey(), entry.getValue()));
+            }
+            logger.info("Registered {} path handlers", pathHandlers.size());
         }
-
+    
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             String path = exchange.getRequestURI().getPath();
-            logger.debug("path " + path);
+            logger.info("Incoming path: {}", path);
+    
+            for (PathHandler handler : pathHandlers) {
+                if (handler.matches(path)) {
+                    logger.info("Path '{}' matched handler for '{}'", path, handler.getDefinedPath());
+                    handler.handle(exchange);
+                    return;
+                }
+            }
+    
+            // If no handler matched, send 404
+            logger.info("No handler matched for path '{}'", path);
+            sendResponse(exchange, "Not Found", 404);
+        }
 
-            String response;
-            int statusCode;
+        private void sendResponse(HttpExchange exchange, String response, int statusCode) throws IOException {
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(statusCode, response.length());
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(response.getBytes(StandardCharsets.UTF_8));
+            }
+        }
+    }
 
-            Configuration.MethodConfig methodConfig = pathConfig.getMethods().get("get");
-            if (methodConfig == null) {
-                response = "Method not supported";
-                statusCode = 405;
-            } else {
+    private class PathHandler {
+        private final String definedPath;
+        private final Configuration.PathConfig pathConfig;
+        private final Pattern pathPattern;
+    
+        public PathHandler(String definedPath, Configuration.PathConfig pathConfig) {
+            this.definedPath = definedPath;
+            this.pathConfig = pathConfig;
+            this.pathPattern = createPathPattern(definedPath);
+            logger.info("Created handler for path: {}, pattern: {}", definedPath, pathPattern);
+        }
+    
+        private Pattern createPathPattern(String path) {
+            String regexPath = path.replaceAll("\\{([^/]+)\\}", "(?<$1>[^/]+)");
+            return Pattern.compile("^" + regexPath + "$");
+        }
+    
+        public boolean matches(String path) {
+            return pathPattern.matcher(path).matches();
+        }
+    
+        public String getDefinedPath() {
+            return definedPath;
+        }
+    
+        public void handle(HttpExchange exchange) throws IOException {
+            String path = exchange.getRequestURI().getPath();
+            Matcher matcher = pathPattern.matcher(path);
+            if (matcher.matches()) {
+                Map<String, String> pathParams = extractPathParameters(matcher);
+                Configuration.MethodConfig methodConfig = pathConfig.getMethods().get("get");
+                if (methodConfig == null) {
+                    sendResponse(exchange, "Method not supported", 405);
+                    return;
+                }
+    
                 String queryMethod = methodConfig.getKafka().getQuery().getMethod();
+                String response;
+                int statusCode;
+    
                 if ("all".equals(queryMethod)) {
                     response = getAllValues(methodConfig);
                     statusCode = 200;
                 } else if ("get".equals(queryMethod)) {
-                    // Matcher matcher = idPattern.matcher(path);
-                    // if (matcher.matches()) {
-                    //     String id = matcher.group(1);
-                    //     response = getValue(id, methodConfig);
-                    //     statusCode = (response != null) ? 200 : 404;
-                    // } else {
-                        response = "Invalid ID";
-                        statusCode = 400;
-                    // }
+                    String key = resolveQueryKey(methodConfig.getKafka().getQuery().getKey(), pathParams);
+                    response = getValue(key, methodConfig);
+                    statusCode = (response != null) ? 200 : 404;
                 } else {
                     response = "Unsupported query method";
                     statusCode = 400;
                 }
+    
+                sendResponse(exchange, response, statusCode);
+            } else {
+                sendResponse(exchange, "Not Found", 404);
             }
+        }
+    
+        private Map<String, String> extractPathParameters(Matcher matcher) {
+            Map<String, String> params = new HashMap<>();
+            for (int i = 1; i <= matcher.groupCount(); i++) {
+                String paramName = pathPattern.pattern().split("\\(\\?<")[i].split(">")[0];
+                params.put(paramName, matcher.group(i));
+            }
+            return params;
+        }
 
-            // Set the Content-Type header to application/json for all responses
+        private String resolveQueryKey(String keyTemplate, Map<String, String> pathParams) {
+            String resolvedKey = keyTemplate;
+            for (Map.Entry<String, String> entry : pathParams.entrySet()) {
+                String placeholder = "${parameters." + entry.getKey() + "}";
+                resolvedKey = resolvedKey.replace(placeholder, entry.getValue());
+            }
+            logger.debug("Resolved query key: {}", resolvedKey);
+            return resolvedKey;
+        }
+
+        private void sendResponse(HttpExchange exchange, String response, int statusCode) throws IOException {
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(statusCode, response.length());
             try (OutputStream os = exchange.getResponseBody()) {
@@ -118,6 +193,7 @@ public class RestApiServer {
 
             keyValueStore.all().forEachRemaining(entry -> {
                 try {
+                    logger.debug("Found Key: " +  (String)entry.key);
                     JsonNode jsonNode = serializeValue(entry.value, methodConfig.getKafka().getSerializer().getValue());
                     jsonArray.add(jsonNode);
                 } catch (IOException e) {

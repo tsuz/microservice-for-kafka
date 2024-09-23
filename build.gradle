@@ -47,17 +47,38 @@ dependencies {
     implementation 'org.json:json:20240303'
     implementation 'io.confluent:kafka-schema-registry-client:7.7.0'
 
+    // Test dependencies
     testImplementation "org.apache.kafka:kafka-streams-test-utils:3.4.0"
-    testImplementation "junit:junit:4.13.2"
-    testImplementation 'org.hamcrest:hamcrest:2.2'
+    // testImplementation "junit:junit:4.13.2"// https://mvnrepository.com/artifact/org.junit.jupiter/junit-jupiter-api
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.11.0'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.8.1'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.8.1'
+    testImplementation 'org.mockito:mockito-core:3.12.4'
+    testImplementation 'org.yaml:snakeyaml:1.29'
 }
 
-test {
+test{
+    useJUnitPlatform()
     testLogging {
+        events "passed", "skipped", "failed"
         outputs.upToDateWhen { false }
         showStandardStreams = true
         exceptionFormat = "full"
     }
+    afterSuite { desc, result ->
+        if (!desc.parent) {
+            println "\nTest result: ${result.resultType}"
+            println "Test summary: ${result.testCount} tests, " +
+                    "${result.successfulTestCount} succeeded, " +
+                    "${result.failedTestCount} failed, " +
+                    "${result.skippedTestCount} skipped"
+        }
+    }
+}
+
+tasks.withType(Test) {
+    reports.html.destination = file("${reporting.baseDir}/${name}")
 }
 
 jar {
