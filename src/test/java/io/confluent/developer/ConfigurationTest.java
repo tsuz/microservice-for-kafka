@@ -405,7 +405,6 @@ public class ConfigurationTest {
         Exception exception = assertThrows(IllegalArgumentException.class, () -> {
             Configuration.fromFile(configPath.toString());
         });
-        System.out.println(  "observed:" +exception.getMessage() );
         assertTrue(exception.getMessage().contains("Parameter flightIddd used in `kafka.query.key` is not defined in path parameters for path: /flights/{flightId}"));
     }
 
