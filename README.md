@@ -136,6 +136,12 @@ Response:
 ```
 
 
+```
+Request: GET /flights/NH1
+Response: 
+  {"latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
+```
+
 
 
 ## How to Run
