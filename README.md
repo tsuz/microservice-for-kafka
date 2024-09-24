@@ -224,6 +224,30 @@ java  -jar build/libs/kafka-as-a-microservice-standalone-*.jar configuration/con
 ```
 
 
+## Monitoring
+
+To enable monitoring, download these files and place them under monitoring folder.
+
+- [javaavent](https://github.com/prometheus/jmx_exporter/releases)
+- [kafka-streams.yml](https://github.com/confluentinc/jmx-monitoring-stacks/blob/main/shared-assets/jmx-exporter/kafka_streams.yml)
+
+And run with these options
+
+```sh
+java -javaagent:monitoring/jmx_prometheus_javaagent-1.0.1.jar=127.0.0.1:7777:monitoring/kafka-streams.yml -jar build/libs/kafka-as-a-microservice-standalone-*.jar configuration/config.yaml
+```
+
+The metrics can be retrieved by using the method below:
+
+```sh
+curl localhost:7777
+```
+
+The metrics can then be ingested by
+
+- Prometheus
+- Open Telemetry
+
 ## Test
 
 Run below command to run unit tests.
