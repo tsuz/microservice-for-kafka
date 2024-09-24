@@ -3,11 +3,13 @@ package io.confluent.developer;
 import org.apache.avro.generic.GenericRecord;
 import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.common.serialization.Serdes;
+import org.apache.kafka.common.utils.Bytes;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StreamsBuilder;
 import org.apache.kafka.streams.Topology;
 import org.apache.kafka.streams.kstream.*;
 import org.apache.kafka.streams.state.KeyValueBytesStoreSupplier;
+import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.Stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -106,14 +108,16 @@ public class KafkaStreamsApplication {
         Serde<V> valueSerde = (Serde<V>) getSerdeForType(methodConfig.getKafka().getSerializer().getValue());
 
         String topic = methodConfig.getKafka().getTopic();
-        KStream<K, V> stream = builder.stream(topic, Consumed.with(keySerde, valueSerde));
-
         String storeName = topic + "-store";
+
         if (!createdStores.contains(storeName)) {
-            KeyValueBytesStoreSupplier storeSupplier = Stores.persistentKeyValueStore(storeName);
-            stream.toTable(Materialized.<K, V>as(storeSupplier)
+            builder.globalTable(
+                topic,
+                Consumed.with(keySerde, valueSerde),
+                Materialized.<K, V, KeyValueStore<Bytes, byte[]>>as(storeName)
                     .withKeySerde(keySerde)
-                    .withValueSerde(valueSerde));
+                    .withValueSerde(valueSerde)
+            );
             createdStores.add(storeName);
             logger.info("Created new state store: " + storeName);
         } else {
