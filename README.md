@@ -231,16 +231,17 @@ We ran some load tests to see how the system performs with real-world data volum
 ### Test Setup
 
 - 10M unique keys in input topic (~0.9GB total message size)
-- RocksDB state store size is 50MB
 - Endpoint: `/user/:userId` doing random lookups across the 10M keys
 - 20 concurrent threads making requests for over a minute
 - The hardware runs a single REST API server on MacBook Air with Apple M1 chip
+- RocksDB state store size is 50MB
+- The client runs on the same machine as the server (very little network latency)
 
 ### Results
 
-- The system handled 7,000 requests/second total with 20 threads
-- The latency was 3 ms (50%), 5ms (95%), 8ms (99%)
+- The library handled around 7,000 requests/second total
 - The RocksDB `.get()` operations averaged 0.12ms per each lookup
+- The latency from the client's point of view was 3 ms (50%), 5ms (95%), 8ms (99%)
 
 The results will look better if all messages fit within memory.
 
