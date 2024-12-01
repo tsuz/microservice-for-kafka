@@ -224,6 +224,29 @@ java  -jar build/libs/kafka-as-a-microservice-standalone-*.jar configuration/con
 ```
 
 
+## Performance Benchmarks
+
+We ran some load tests to see how the system performs with real-world data volumes and access patterns.
+
+### Test Setup
+
+- 10M unique keys in input topic (~0.9GB total message size)
+- RocksDB state store size is 50MB
+- Endpoint: `/user/:userId` doing random lookups across the 10M keys
+- 20 concurrent threads making requests for over a minute
+- The hardware runs a single REST API server on MacBook Air with Apple M1 chip
+
+### Results
+
+- The system handled 7,000 requests/second total with 20 threads
+- The latency was 3 ms (50%), 5ms (95%), 8ms (99%)
+- The RocksDB `.get()` operations averaged 0.12ms per each lookup
+
+The results will look better if all messages fit within memory.
+
+Also, the results will vary based on hardware, query method, and disk type.
+
+
 ## Monitoring
 
 To enable monitoring, download these files and place them under monitoring folder.
