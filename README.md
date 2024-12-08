@@ -1,6 +1,6 @@
 # Microservice for Kafka
 
-Deliver Kafka topics data to your clients with a microservice conforming to OpenAPI specification.
+Streamline data delivery from Kafka topics to your clients with a flexible, last-mile microservice solution using OpenAPI specification.
 
 ## Motivation
 
