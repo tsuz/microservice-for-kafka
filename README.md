@@ -2,7 +2,7 @@
 
 Streamline data delivery from Kafka topics to your clients with a flexible, last-mile microservice solution using OpenAPI specification.
 
-## Motivation
+# Motivation
 
 Key motivations for this project:
 
@@ -13,36 +13,9 @@ Key motivations for this project:
 
 ![with and without this library](https://github.com/user-attachments/assets/9ecdcc34-5884-4aeb-bfef-e5680e9cc66f)
 
-## Features
+# Examples
 
-**API Endpoint Type**
-
-| Endpoint type | Status |
-|--|--|
-| List all items | ✅
-| Get single item | ✅
-
-
-**Data Type (Key)**
-| Data Type | Status |
-|--|--|
-| String | ✅
-| Avro | 
-| Int | 
-
-
-**Data Type (Value)**
-| Data Type | Status |
-|--|--|
-| String (JSON) | ✅
-| String | 
-| JSON Schema | 
-| Avro Schema | ✅
-
-
-## Example
-
-### List all endpoint
+## Get all items
 
 **Config**
 
@@ -83,6 +56,59 @@ paths:
             application/json:
               schema:
                 type: array
+```
+
+
+**Topic Input**
+
+Produce to `flight-location` topic:
+
+```sh
+kafka-console-producer \
+  --property "key.separator=;" \
+  --property "parse.key=true" \
+  --bootstrap-server localhost:9092 \
+  --topic flight-location
+
+> "NH1";{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
+> "NH2";{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3 }
+```
+
+
+**REST Endpoint Output**
+
+```sh
+curl localhost:7001/flights | jq
+
+[
+  {"latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5},
+  {"latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3}
+]
+
+```
+
+## Get item by ID
+
+**Config**
+
+```yaml
+kafka:
+  bootstrap.servers:
+  application.id: kafka-streams-101
+  bootstrap.servers: localhost:9092
+
+  # Serializer
+  key.serializer: org.apache.kafka.common.serialization.StringSerializer
+  value.serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
+  
+  # Schema Registry Properties
+  schema.registry.url: http://localhost:8081
+  basic.auth.credentials.source: USER_INFO
+  basic.auth.user.info: username:password
+
+  metrics.recording.level: DEBUG
+
+paths:
   /flights/{flightId}:
     parameters:
     - name: flightId
@@ -104,10 +130,10 @@ paths:
             application/json:
               schema:
                 type: object
-
 ```
 
-**Input**
+
+**Topic Input**
 
 Produce to `flight-location` topic:
 
@@ -118,29 +144,71 @@ kafka-console-producer \
   --bootstrap-server localhost:9092 \
   --topic flight-location
 
-> NH1;{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
-> NH2;{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3 }
-```
-
-**Output**
-
-This generates below endpoint:
-
-```
-Request: GET /flights
-Response: 
-  [
-	{"latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 },
-	{"latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3 }
-  ]
+> "NH1";{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
+> "NH2";{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3 }
 ```
 
 
+**REST Endpoint Output**
+
+```sh
+curl localhost:7001/flights/NH1 | jq
+
+ {"latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
 ```
-Request: GET /flights/NH1
-Response: 
-  {"latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
-```
+
+
+
+# Performance Benchmarks
+
+We ran some load tests to see how the system performs with real-world data volumes and access patterns.
+
+## Setup
+
+- 10M unique keys in input topic (~0.9GB total message size)
+- Endpoint: `/user/:userId` doing random lookups across the 10M keys
+- 20 concurrent threads making requests for over a minute
+- The hardware runs a single REST API server on MacBook Air with Apple M1 chip
+- RocksDB state store size is 50MB
+- The client runs on the same machine as the server (very little network latency)
+
+## Results
+
+- The library handled around 7,000 requests/second total
+- The RocksDB `.get()` operations averaged 0.12ms per each lookup
+- The latency from the client's point of view was 3 ms (50%), 5ms (95%), 8ms (99%)
+
+The results will look better if all messages fit within memory.
+
+Also, the results will vary based on hardware, query method, and disk type.
+
+
+
+# Features
+
+**API Endpoint Type**
+
+| Endpoint type | Status |
+|--|--|
+| List all items | ✅
+| Get single item | ✅
+
+
+**Data Type (Key)**
+| Data Type | Status |
+|--|--|
+| String | ✅
+| Avro | 
+| Int | 
+
+
+**Data Type (Value)**
+| Data Type | Status |
+|--|--|
+| String (JSON) | ✅
+| String | 
+| JSON Schema | 
+| Avro Schema | ✅
 
 
 
@@ -222,30 +290,6 @@ docker-compose up -d
 ```sh
 java  -jar build/libs/kafka-as-a-microservice-standalone-*.jar configuration/config.yaml
 ```
-
-
-## Performance Benchmarks
-
-We ran some load tests to see how the system performs with real-world data volumes and access patterns.
-
-### Test Setup
-
-- 10M unique keys in input topic (~0.9GB total message size)
-- Endpoint: `/user/:userId` doing random lookups across the 10M keys
-- 20 concurrent threads making requests for over a minute
-- The hardware runs a single REST API server on MacBook Air with Apple M1 chip
-- RocksDB state store size is 50MB
-- The client runs on the same machine as the server (very little network latency)
-
-### Results
-
-- The library handled around 7,000 requests/second total
-- The RocksDB `.get()` operations averaged 0.12ms per each lookup
-- The latency from the client's point of view was 3 ms (50%), 5ms (95%), 8ms (99%)
-
-The results will look better if all messages fit within memory.
-
-Also, the results will vary based on hardware, query method, and disk type.
 
 
 ## Monitoring
