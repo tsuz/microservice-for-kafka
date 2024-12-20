@@ -236,7 +236,8 @@ public class RestApiServer {
                 case "protobuf":
                     DynamicMessage protoMessage = (DynamicMessage) value;
                     String jsonString = PROTO_PRINTER.print(protoMessage);
-                    return objectMapper.readTree(jsonString);                default:
+                    return objectMapper.readTree(jsonString);
+                default:
                     throw new IllegalArgumentException("Unsupported serializer type: " + serializerType);
             }
         }
