@@ -13,10 +13,15 @@ import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.Stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.protobuf.DynamicMessage;
+import com.google.protobuf.Message;
+
 import static io.confluent.kafka.schemaregistry.client.SchemaRegistryClientConfig.*;
 import static io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG;
 
 import io.confluent.kafka.streams.serdes.avro.GenericAvroSerde;
+import io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde;
 
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
@@ -146,6 +151,10 @@ public class KafkaStreamsApplication {
                 Serde<GenericRecord> avroSerde = new GenericAvroSerde();
                 avroSerde.configure(buildSchemaRegistryConfigMap(config.getKafkaConfig()), false);
                 return avroSerde;
+            case "protobuf":
+                Serde<DynamicMessage> protobufSerde = new KafkaProtobufSerde<>();
+                protobufSerde.configure(buildSchemaRegistryConfigMap(config.getKafkaConfig()), false);
+                return protobufSerde;
             default:
                 throw new IllegalArgumentException("Unsupported serializer type: " + serializerType);
         }
@@ -169,6 +178,8 @@ public class KafkaStreamsApplication {
                 return byte[].class;
             case "avro":
                 return GenericRecord.class;
+            case "protobuf":
+                return DynamicMessage.class;
             default:
                 throw new IllegalArgumentException("Unsupported serializer type: " + serializerType);
         }

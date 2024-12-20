@@ -2,9 +2,11 @@ package io.confluent.developer;
 
 import com.sun.net.httpserver.HttpServer;
 import com.sun.net.httpserver.HttpHandler;
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.google.protobuf.DynamicMessage;
 import com.sun.net.httpserver.HttpExchange;
 
 import org.apache.avro.generic.GenericRecord;
@@ -35,6 +37,8 @@ public class RestApiServer {
     private final int port;
     private HttpServer server;
     private static final ObjectMapper objectMapper = new ObjectMapper();
+    // Add this as a static final field
+    private static final com.google.protobuf.util.JsonFormat.Printer PROTO_PRINTER = com.google.protobuf.util.JsonFormat.printer().includingDefaultValueFields();
 
     private static final Logger logger = LoggerFactory.getLogger(RestApiServer.class);
 
@@ -125,35 +129,39 @@ public class RestApiServer {
         }
     
         public void handle(HttpExchange exchange) throws IOException {
-            String path = exchange.getRequestURI().getPath();
-            Matcher matcher = pathPattern.matcher(path);
-            if (matcher.matches()) {
-                Map<String, String> pathParams = extractPathParameters(matcher);
-                Configuration.MethodConfig methodConfig = pathConfig.getMethods().get("get");
-                if (methodConfig == null) {
-                    sendResponse(exchange, "Method not supported", 405);
-                    return;
-                }
-    
-                String queryMethod = methodConfig.getKafka().getQuery().getMethod();
-                String response;
-                int statusCode;
-    
-                if ("all".equals(queryMethod)) {
-                    response = getAllValues(methodConfig);
-                    statusCode = 200;
-                } else if ("get".equals(queryMethod)) {
-                    String key = resolveQueryKey(methodConfig.getKafka().getQuery().getKey(), pathParams);
-                    response = getValue(key, methodConfig);
-                    statusCode = (response != null) ? 200 : 404;
+            try {
+                String path = exchange.getRequestURI().getPath();
+                Matcher matcher = pathPattern.matcher(path);
+                if (matcher.matches()) {
+                    Map<String, String> pathParams = extractPathParameters(matcher);
+                    Configuration.MethodConfig methodConfig = pathConfig.getMethods().get("get");
+                    if (methodConfig == null) {
+                        sendResponse(exchange, "Method not supported", 405);
+                        return;
+                    }
+        
+                    String queryMethod = methodConfig.getKafka().getQuery().getMethod();
+                    String response;
+                    int statusCode;
+        
+                    if ("all".equals(queryMethod)) {
+                        response = getAllValues(methodConfig);
+                        statusCode = 200;
+                    } else if ("get".equals(queryMethod)) {
+                        String key = resolveQueryKey(methodConfig.getKafka().getQuery().getKey(), pathParams);
+                        response = getValue(key, methodConfig);
+                        statusCode = (response != null) ? 200 : 404;
+                    } else {
+                        response = "Unsupported query method";
+                        statusCode = 400;
+                    }
+        
+                    sendResponse(exchange, response, statusCode);
                 } else {
-                    response = "Unsupported query method";
-                    statusCode = 400;
+                    sendResponse(exchange, "Not Found", 404);
                 }
-    
-                sendResponse(exchange, response, statusCode);
-            } else {
-                sendResponse(exchange, "Not Found", 404);
+            } catch (IOException e) {
+                logger.error("Error serializing value: " + e.getMessage());
             }
         }
     
@@ -225,7 +233,10 @@ public class RestApiServer {
                     writer.write(avroRecord, jsonEncoder);
                     jsonEncoder.flush();
                     return objectMapper.readTree(baos.toString());
-                default:
+                case "protobuf":
+                    DynamicMessage protoMessage = (DynamicMessage) value;
+                    String jsonString = PROTO_PRINTER.print(protoMessage);
+                    return objectMapper.readTree(jsonString);                default:
                     throw new IllegalArgumentException("Unsupported serializer type: " + serializerType);
             }
         }

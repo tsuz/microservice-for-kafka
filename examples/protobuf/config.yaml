@@ -1,0 +1,31 @@
+---
+kafka:
+  bootstrap.servers: localhost:9092
+  schema.registry.url: http://localhost:8081
+
+  metrics.recording.level: DEBUG
+
+
+paths:
+  /users/{userId}:
+    parameters:
+    - name: userId
+      in: path
+      required: true
+      description: the user identifier
+    get:
+      kafka:
+        topic: users
+        serializer:
+          key: string
+          value: protobuf
+        query:
+          method: get
+          key: ${parameters.userId}
+      responses:
+        '200':
+          description:
+          content:
+            application/json:
+              schema:
+                type: object
