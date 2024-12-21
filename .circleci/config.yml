@@ -16,6 +16,13 @@ jobs:
             - gradle-deps-v1-{{ checksum "build.gradle" }}
             - gradle-deps-v1-
 
+     # Set up Gradle wrapper and permissions
+      - run:
+          name: Set Up Gradle
+          command: |
+            chmod +x gradlew
+            ./gradlew --version
+            
       # Download and cache dependencies
       - run:
           name: Download Dependencies
