@@ -26,13 +26,8 @@ Key motivations for this project:
 ```yaml
 
 kafka:
-  bootstrap.servers:
   application.id: kafka-streams-101
   bootstrap.servers: localhost:9092
-
-  # Serializer
-  key.serializer: org.apache.kafka.common.serialization.StringSerializer
-  value.serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
   
   # Schema Registry Properties
   schema.registry.url: http://localhost:8081
@@ -97,14 +92,9 @@ curl localhost:7001/flights | jq
 
 ```yaml
 kafka:
-  bootstrap.servers:
   application.id: kafka-streams-101
   bootstrap.servers: localhost:9092
 
-  # Serializer
-  key.serializer: org.apache.kafka.common.serialization.StringSerializer
-  value.serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
-  
   # Schema Registry Properties
   schema.registry.url: http://localhost:8081
   basic.auth.credentials.source: USER_INFO
