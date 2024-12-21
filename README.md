@@ -209,6 +209,7 @@ Also, the results will vary based on hardware, query method, and disk type.
 | String | 
 | JSON Schema | 
 | Avro Schema | ✅
+| Protobuf | ✅
 
 
 
