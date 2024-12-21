@@ -1,0 +1,12 @@
+version: 2.1
+
+orbs:
+  gradle: circleci/gradle@3.0.0
+
+workflows:
+  checkout-build-test:
+    jobs:
+      - gradle/test:
+          executor:
+            name: gradle/default
+            tag: '17.0'

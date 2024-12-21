@@ -1,6 +1,10 @@
+
 # Microservice for Kafka
 
 Streamline data delivery from Kafka topics to your clients with a flexible, last-mile microservice solution using OpenAPI specification.
+
+[![CircleCI](https://dl.circleci.com/status-badge/img/circleci/HzVo2vtpApgYVjMrhXoMPg/XFo6qMvVan1cv4RiYzoGk2/tree/main.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/circleci/HzVo2vtpApgYVjMrhXoMPg/XFo6qMvVan1cv4RiYzoGk2/tree/main)
+
 
 # Motivation
 

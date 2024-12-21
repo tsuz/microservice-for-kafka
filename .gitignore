@@ -28,7 +28,6 @@ build
 .vscode
 
 configuration
-gradle*
 
 # VSCode
 .DS_Store

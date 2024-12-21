@@ -479,7 +479,7 @@ public class ConfigurationTest {
         Exception exception = assertThrows(IllegalArgumentException.class, () -> {
             Configuration.fromFile(configPath.toString());
         });
-        assertTrue(exception.getMessage().contains("`kafka.serializer.value` must be set and is one of 'string' or 'avro' for path: /flights/{flightId}"));
+        assertTrue(exception.getMessage().contains("`kafka.serializer.value` must be set and is one of 'string', 'avro', or 'protobuf' for path: /flights/{flightId}"));
     }
 
     @Test
