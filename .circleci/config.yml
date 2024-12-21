@@ -6,4 +6,7 @@ orbs:
 workflows:
   checkout-build-test:
     jobs:
-      - gradle/test
+      - gradle/test:
+          executor:
+            name: gradle/default
+            tag: '17.0'
