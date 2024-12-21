@@ -13,10 +13,15 @@ import org.apache.kafka.streams.state.KeyValueStore;
 import org.apache.kafka.streams.state.Stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.protobuf.DynamicMessage;
+import com.google.protobuf.Message;
+
 import static io.confluent.kafka.schemaregistry.client.SchemaRegistryClientConfig.*;
 import static io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG;
 
 import io.confluent.kafka.streams.serdes.avro.GenericAvroSerde;
+import io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde;
 
 import java.util.*;
 import java.util.concurrent.CountDownLatch;
@@ -94,16 +99,13 @@ public class KafkaStreamsApplication {
 
         for (Configuration.PathConfig pathConfig : config.getPaths().values()) {
             for (Configuration.MethodConfig methodConfig : pathConfig.getMethods().values()) {
-                Configuration.KafkaConfig kafkaConfig = methodConfig.getKafka();
-                Class<?> keyClass = getClassForType(kafkaConfig.getSerializer().getKey());
-                Class<?> valueClass = getClassForType(kafkaConfig.getSerializer().getValue());
-                processEndpoint(builder, pathConfig, methodConfig, keyClass, valueClass);
+                processEndpoint(builder, pathConfig, methodConfig);
             }
         }
         return builder.build();
     }
 
-    private static <K, V> void processEndpoint(StreamsBuilder builder, Configuration.PathConfig pathConfig, Configuration.MethodConfig methodConfig, Class<K> keyClass, Class<V> valueClass) {
+    private static <K, V> void processEndpoint(StreamsBuilder builder, Configuration.PathConfig pathConfig, Configuration.MethodConfig methodConfig) {
         Serde<K> keySerde = (Serde<K>) getSerdeForType(methodConfig.getKafka().getSerializer().getKey());
         Serde<V> valueSerde = (Serde<V>) getSerdeForType(methodConfig.getKafka().getSerializer().getValue());
 
@@ -146,29 +148,10 @@ public class KafkaStreamsApplication {
                 Serde<GenericRecord> avroSerde = new GenericAvroSerde();
                 avroSerde.configure(buildSchemaRegistryConfigMap(config.getKafkaConfig()), false);
                 return avroSerde;
-            default:
-                throw new IllegalArgumentException("Unsupported serializer type: " + serializerType);
-        }
-    }
-
-    private static Class<?> getClassForType(String serializerType) {
-        switch (serializerType.toLowerCase()) {
-            case "string":
-                return String.class;
-            case "long":
-                return Long.class;
-            case "integer":
-            case "int":
-                return Integer.class;
-            case "double":
-                return Double.class;
-            case "float":
-                return Float.class;
-            case "byte":
-            case "bytes":
-                return byte[].class;
-            case "avro":
-                return GenericRecord.class;
+            case "protobuf":
+                Serde<DynamicMessage> protobufSerde = new KafkaProtobufSerde<>();
+                protobufSerde.configure(buildSchemaRegistryConfigMap(config.getKafkaConfig()), false);
+                return protobufSerde;
             default:
                 throw new IllegalArgumentException("Unsupported serializer type: " + serializerType);
         }
