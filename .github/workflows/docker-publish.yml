@@ -1,17 +1,11 @@
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-# GitHub recommends pinning actions to a commit SHA.
-# To get a newer version, you will need to update the SHA.
-# You can also reference a tag or branch, but the action may change without warning.
-
 name: Publish Docker image
 
 on:
-  release:
-    types: [published]
+  push:
+    branches:
+      - '*'         # Matches every branch
+      - '!main'     # Excludes main branch
+      - '!master'   # Excludes master branch
 
 jobs:
   push_to_registry:
@@ -37,6 +31,9 @@ jobs:
         uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
         with:
           images: tsuz/microservice-for-kafka
+          tags: |
+            type=ref,event=branch
+            type=sha,format=short
 
       - name: Build and push Docker image
         id: push
