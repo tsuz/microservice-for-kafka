@@ -27,8 +27,12 @@ services:
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: false
 
   kafka-streams-app:
-    build: .
+    image: tsuz/microservice-for-kafka:latest
     ports:
       - "7001:7001"
+    environment:
+      CONFIG_PATH: /app/config/config.yaml
+    volumes:
+      - ./configuration/config-docker.yaml:/app/config/config.yaml
     depends_on:
       - kafka
