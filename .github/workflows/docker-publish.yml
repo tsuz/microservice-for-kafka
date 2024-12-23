@@ -1,11 +1,8 @@
 name: Publish Docker image
 
 on:
-  push:
-    branches:
-      - '*'         # Matches every branch
-      - '!main'     # Excludes main branch
-      - '!master'   # Excludes master branch
+  release:
+    types: [published]
 
 jobs:
   push_to_registry:
@@ -31,9 +28,6 @@ jobs:
         uses: docker/metadata-action@9ec57ed1fcdbf14dcef7dfbe97b2010124a938b7
         with:
           images: tsuz/microservice-for-kafka
-          tags: |
-            type=ref,event=branch
-            type=sha,format=short
 
       - name: Build and push Docker image
         id: push
