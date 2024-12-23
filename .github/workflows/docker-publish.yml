@@ -13,6 +13,9 @@ jobs:
       contents: read
       attestations: write
       id-token: write
+    env:
+      REGISTRY: docker.io
+      IMAGE_NAME: tsuz/microservice-for-kafka
     steps:
       - name: Check out the repo
         uses: actions/checkout@v4
