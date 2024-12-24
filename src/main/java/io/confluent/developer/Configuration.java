@@ -295,9 +295,11 @@ public class Configuration {
         // Check kafka.serializer.value
         String valueSerializer = serializer.getValue();
         if (valueSerializer == null || (!valueSerializer.equals("string") && 
-            !valueSerializer.equals("avro") && !valueSerializer.equals("protobuf"))) {
+            !valueSerializer.equals("avro") && 
+            !valueSerializer.equals("protobuf")) &&
+            !valueSerializer.equals("jsonsr")) {
             throw new IllegalArgumentException(
-                "`kafka.serializer.value` must be set and is one of 'string', 'avro', or 'protobuf' for path: " + path);
+                "`kafka.serializer.value` must be set and is one of 'string', 'avro', 'protobuf', or 'jsonsr' for path: " + path);
         }
     }
 

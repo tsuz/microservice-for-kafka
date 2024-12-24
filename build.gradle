@@ -62,6 +62,9 @@ dependencies {
     implementation 'com.google.protobuf:protobuf-java-util:3.24.0'
     implementation 'io.confluent:kafka-protobuf-serializer:7.7.0'
     implementation 'io.confluent:kafka-streams-protobuf-serde:7.7.0'
+    implementation 'io.confluent:kafka-json-schema-serializer:7.7.0'
+    implementation 'io.confluent:kafka-json-schema-provider:7.7.0'
+    implementation 'io.confluent:kafka-streams-json-schema-serde:7.7.0'
 }
 
 test{
