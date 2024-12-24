@@ -1,6 +1,9 @@
 package io.confluent.developer;
 
 import com.sun.net.httpserver.HttpServer;
+
+import io.confluent.kafka.streams.serdes.json.KafkaJsonSchemaSerde;
+
 import com.sun.net.httpserver.HttpHandler;
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -15,6 +18,7 @@ import org.apache.avro.io.EncoderFactory;
 import org.apache.avro.io.JsonEncoder;
 import org.apache.avro.specific.SpecificDatumWriter;
 import org.apache.commons.io.output.ByteArrayOutputStream;
+import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StoreQueryParameters;
 import org.apache.kafka.streams.state.QueryableStoreTypes;
@@ -237,6 +241,14 @@ public class RestApiServer {
                     DynamicMessage protoMessage = (DynamicMessage) value;
                     String jsonString = PROTO_PRINTER.print(protoMessage);
                     return objectMapper.readTree(jsonString);
+                case "jsonsr":
+                    if (value instanceof JsonNode) {
+                        return (JsonNode) value;
+                    } else if (value instanceof String) {
+                        return objectMapper.readTree((String) value);
+                    } else {
+                        return objectMapper.valueToTree(value);
+                    }
                 default:
                     throw new IllegalArgumentException("Unsupported serializer type: " + serializerType);
             }

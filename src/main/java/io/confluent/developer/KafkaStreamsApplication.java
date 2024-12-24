@@ -14,12 +14,14 @@ import org.apache.kafka.streams.state.Stores;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.google.protobuf.DynamicMessage;
 import com.google.protobuf.Message;
 
 import static io.confluent.kafka.schemaregistry.client.SchemaRegistryClientConfig.*;
 import static io.confluent.kafka.serializers.AbstractKafkaSchemaSerDeConfig.SCHEMA_REGISTRY_URL_CONFIG;
 
+import io.confluent.kafka.streams.serdes.json.KafkaJsonSchemaSerde;
 import io.confluent.kafka.streams.serdes.avro.GenericAvroSerde;
 import io.confluent.kafka.streams.serdes.protobuf.KafkaProtobufSerde;
 
@@ -152,6 +154,10 @@ public class KafkaStreamsApplication {
                 Serde<DynamicMessage> protobufSerde = new KafkaProtobufSerde<>();
                 protobufSerde.configure(buildSchemaRegistryConfigMap(config.getKafkaConfig()), false);
                 return protobufSerde;
+            case "jsonsr":
+                Serde<JsonNode> jsonSchemaSerde = new KafkaJsonSchemaSerde<>();
+                jsonSchemaSerde.configure(buildSchemaRegistryConfigMap(config.getKafkaConfig()), false);
+                return jsonSchemaSerde;
             default:
                 throw new IllegalArgumentException("Unsupported serializer type: " + serializerType);
         }
