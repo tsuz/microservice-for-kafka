@@ -305,19 +305,7 @@ curl localhost:7777/metrics
 
 **Local**
 
-Download these assets under monitoring
-
-```sh
-cd monitoring
-
-# Download Kafka Streams JMX exporter config
-curl -O https://raw.githubusercontent.com/confluentinc/jmx-monitoring-stacks/refs/heads/main/shared-assets/jmx-exporter/kafka_streams.yml
-
-# Download Prometheus Agent
-curl -O https://repo.maven.apache.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/1.0.1/jmx_prometheus_javaagent-1.0.1.jar
-```
-
-After downloading the assets, run with these options
+Monitoring assets under `monitoring` folder. Run with these options
 
 ```sh
 java -javaagent:monitoring/jmx_prometheus_javaagent-1.0.1.jar=127.0.0.1:7777:monitoring/kafka_streams.yml -jar build/libs/kafka-as-a-microservice-standalone-*.jar configuration/config.yaml
