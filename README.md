@@ -159,6 +159,8 @@ Also, the results will vary based on hardware, query method, and disk type.
 ### 1. Create a configuration file
 
 ```sh
+git clone git@github.com:tsuz/microservice-for-kafka.git
+cd microservice-for-kafka
 mkdir -p configuration
 vim configuration/config.yaml
 ```
