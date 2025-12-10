@@ -58,33 +58,6 @@ paths:
 ```
 
 
-**Topic Input**
-
-Produce to `flight-location` topic:
-
-```sh
-kafka-console-producer \
-  --property "key.separator=;" \
-  --property "parse.key=true" \
-  --bootstrap-server localhost:9092 \
-  --topic flight-location
-
-> "NH1";{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
-> "NH2";{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3 }
-```
-
-
-**REST Endpoint Output**
-
-```sh
-curl localhost:7001/flights | jq
-
-[
-  {"latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5},
-  {"latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3}
-]
-
-```
 
 ## Get item by ID
 
@@ -124,31 +97,6 @@ paths:
             application/json:
               schema:
                 type: object
-```
-
-
-**Topic Input**
-
-Produce to `flight-location` topic:
-
-```sh
-kafka-console-producer \
-  --property "key.separator=;" \
-  --property "parse.key=true" \
-  --bootstrap-server localhost:9092 \
-  --topic flight-location
-
-> "NH1";{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
-> "NH2";{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3 }
-```
-
-
-**REST Endpoint Output**
-
-```sh
-curl localhost:7001/flights/NH1 | jq
-
- {"latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
 ```
 
 
@@ -211,6 +159,8 @@ Also, the results will vary based on hardware, query method, and disk type.
 ### 1. Create a configuration file
 
 ```sh
+git clone git@github.com:tsuz/microservice-for-kafka.git
+cd microservice-for-kafka
 mkdir -p configuration
 vim configuration/config.yaml
 ```
@@ -233,7 +183,7 @@ paths:
           method: all
         serializer:
           key: string
-          value: avro
+          value: string
       responses:
         '200':
           description: A list of flights
@@ -251,7 +201,7 @@ paths:
         topic: flight-location
         serializer:
           key: string
-          value: avro
+          value: string
         query:
           method: get
           key: ${parameters.flightId}
@@ -283,6 +233,47 @@ docker-compose up -d
 
 ```sh
 java  -jar build/libs/kafka-as-a-microservice-standalone-*.jar configuration/config.yaml
+```
+
+### 3. Write Messages
+
+Produce to `flight-location` topic:
+
+```sh
+kafka-console-producer \
+  --property "key.separator=;" \
+  --property "parse.key=true" \
+  --bootstrap-server localhost:9092 \
+  --topic flight-location
+
+# produce below messages
+
+NH1;{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
+NH2;{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3 }
+```
+
+### 4. Get Messages via REST
+
+
+**REST Endpoint Output**
+
+To get all,
+
+```sh
+curl localhost:7001/flights | jq
+
+[
+  {"latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5},
+  {"latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3}
+]
+```
+
+To get specific key,
+
+```sh
+curl localhost:7001/flights/NH1 | jq
+
+{"latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
 ```
 
 
