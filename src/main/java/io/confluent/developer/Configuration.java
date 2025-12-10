@@ -219,7 +219,6 @@ public class Configuration {
             throw new IllegalArgumentException("Query key is missing in Kafka config for path: " + queryConfig);
         }
         
-        logger.info("queryKey: " + queryKey);
         if (queryKey.contains("${parameters.")) {
             String paramName = queryKey.substring(queryKey.indexOf("${parameters.") + 13, queryKey.indexOf("}"));
             boolean found = false;
