@@ -92,7 +92,6 @@ public class KafkaStreamsApplication {
             map.put(BASIC_AUTH_CREDENTIALS_SOURCE, config.getProperty(BASIC_AUTH_CREDENTIALS_SOURCE));
         if (config.containsKey(USER_INFO_CONFIG))
             map.put(USER_INFO_CONFIG, config.getProperty(USER_INFO_CONFIG));
-            logger.info("got config "  + map.toString());
         return map;
     }
 
