@@ -276,24 +276,56 @@ curl localhost:7001/flights/NH1 | jq
 {"latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
 ```
 
+### 5. Enable Metric Monitoring
 
-## Monitoring
-
-To enable monitoring, download these files and place them under monitoring folder.
-
-- [javaavent](https://github.com/prometheus/jmx_exporter/releases)
-- [kafka-streams.yml](https://github.com/confluentinc/jmx-monitoring-stacks/blob/main/shared-assets/jmx-exporter/kafka_streams.yml)
-
-And run with these options
+Go to this library's home directory and create a folder and download assets.
 
 ```sh
-java -javaagent:monitoring/jmx_prometheus_javaagent-1.0.1.jar=127.0.0.1:7777:monitoring/kafka-streams.yml -jar build/libs/kafka-as-a-microservice-standalone-*.jar configuration/config.yaml
+mkdir monitoring
+cd monitoring
+
+# Download Kafka Streams JMX exporter config
+curl -O https://raw.githubusercontent.com/confluentinc/jmx-monitoring-stacks/refs/heads/main/shared-assets/jmx-exporter/kafka_streams.yml
+
+# Download Prometheus Agent
+curl -O https://repo.maven.apache.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/1.0.1/jmx_prometheus_javaagent-1.0.1.jar
+```
+
+**Docker**
+
+Uncomment line 34 and 37 in docker-compose file
+
+```sh
+JAVA_OPTS: "-javaagent:/app/monitoring/jmx_prometheus_javaagent-1.0.1.jar=0.0.0.0:7777:/app/monitoring/kafka_streams.yml"
+
+# and
+
+- ./monitoring:/app/monitoring
+```
+
+Then run again
+
+```sh
+docker-compose up
+```
+
+Verify by accessing 
+```sh
+curl localhost:7777/metrics
+```
+
+**Local**
+
+After downloading the assets, run with these options
+
+```sh
+java -javaagent:monitoring/jmx_prometheus_javaagent-1.0.1.jar=127.0.0.1:7777:monitoring/kafka_streams.yml -jar build/libs/kafka-as-a-microservice-standalone-*.jar configuration/config.yaml
 ```
 
 The metrics can be retrieved by using the method below:
 
 ```sh
-curl localhost:7777
+curl localhost:7777/metrics
 ```
 
 The metrics can then be ingested by

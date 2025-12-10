@@ -18,4 +18,4 @@ if [ ! -f "$CONFIG_PATH" ]; then
 fi
 
 # Start the application with the specified config
-exec java -jar /app/app.jar "$CONFIG_PATH"
+exec java $JAVA_OPTS -jar /app/app.jar "$CONFIG_PATH"
