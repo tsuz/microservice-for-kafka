@@ -278,28 +278,17 @@ curl localhost:7001/flights/NH1 | jq
 
 ### 5. Enable Metric Monitoring
 
-Go to this library's home directory and create a folder and download assets.
-
-```sh
-mkdir monitoring
-cd monitoring
-
-# Download Kafka Streams JMX exporter config
-curl -O https://raw.githubusercontent.com/confluentinc/jmx-monitoring-stacks/refs/heads/main/shared-assets/jmx-exporter/kafka_streams.yml
-
-# Download Prometheus Agent
-curl -O https://repo.maven.apache.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/1.0.1/jmx_prometheus_javaagent-1.0.1.jar
-```
-
 **Docker**
 
-Uncomment line 34 and 37 in docker-compose file
+Metrics is enabled by default. To disable this, comment out line 34 in docker-compose file
 
 ```sh
 JAVA_OPTS: "-javaagent:/app/monitoring/jmx_prometheus_javaagent-1.0.1.jar=0.0.0.0:7777:/app/monitoring/kafka_streams.yml"
+```
 
-# and
+To override metrics exporter behavior or prometheus agent, place your assets under `monitoring` folder
 
+```sh
 - ./monitoring:/app/monitoring
 ```
 
@@ -315,6 +304,18 @@ curl localhost:7777/metrics
 ```
 
 **Local**
+
+Download these assets under monitoring
+
+```sh
+cd monitoring
+
+# Download Kafka Streams JMX exporter config
+curl -O https://raw.githubusercontent.com/confluentinc/jmx-monitoring-stacks/refs/heads/main/shared-assets/jmx-exporter/kafka_streams.yml
+
+# Download Prometheus Agent
+curl -O https://repo.maven.apache.org/maven2/io/prometheus/jmx/jmx_prometheus_javaagent/1.0.1/jmx_prometheus_javaagent-1.0.1.jar
+```
 
 After downloading the assets, run with these options
 
