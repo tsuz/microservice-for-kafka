@@ -183,7 +183,7 @@ paths:
           method: all
         serializer:
           key: string
-          value: avro
+          value: string
       responses:
         '200':
           description: A list of flights
@@ -201,7 +201,7 @@ paths:
         topic: flight-location
         serializer:
           key: string
-          value: avro
+          value: string
         query:
           method: get
           key: ${parameters.flightId}
