@@ -23,9 +23,6 @@ services:
       # Make default replication factor for topic: __consumer_offsets to be 1
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
 
-      # Do not auto create
-      KAFKA_AUTO_CREATE_TOPICS_ENABLE: false
-
   kafka-streams-app:
     image: tsuz/microservice-for-kafka:latest
     ports:
@@ -33,6 +30,6 @@ services:
     environment:
       CONFIG_PATH: /app/config/config.yaml
     volumes:
-      - ./configuration/config-docker.yaml:/app/config/config.yaml
+      - ./configuration/config.yaml:/app/config/config.yaml
     depends_on:
       - kafka
