@@ -58,33 +58,6 @@ paths:
 ```
 
 
-**Topic Input**
-
-Produce to `flight-location` topic:
-
-```sh
-kafka-console-producer \
-  --property "key.separator=;" \
-  --property "parse.key=true" \
-  --bootstrap-server localhost:9092 \
-  --topic flight-location
-
-> "NH1";{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
-> "NH2";{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3 }
-```
-
-
-**REST Endpoint Output**
-
-```sh
-curl localhost:7001/flights | jq
-
-[
-  {"latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5},
-  {"latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3}
-]
-
-```
 
 ## Get item by ID
 
@@ -124,31 +97,6 @@ paths:
             application/json:
               schema:
                 type: object
-```
-
-
-**Topic Input**
-
-Produce to `flight-location` topic:
-
-```sh
-kafka-console-producer \
-  --property "key.separator=;" \
-  --property "parse.key=true" \
-  --bootstrap-server localhost:9092 \
-  --topic flight-location
-
-> "NH1";{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
-> "NH2";{ "latitude": 37.7749, "longitude": -122.4194, "bearing": 134.3 }
-```
-
-
-**REST Endpoint Output**
-
-```sh
-curl localhost:7001/flights/NH1 | jq
-
- {"latitude": 37.7749, "longitude": -122.4194, "bearing": 135.5 }
 ```
 
 
