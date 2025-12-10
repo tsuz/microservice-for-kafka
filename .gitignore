@@ -12,6 +12,10 @@
 
 # Package Files #
 *.jar
+
+# keep monitoring jar
+!monitoring/*.jar
+
 *.war
 *.nar
 *.ear

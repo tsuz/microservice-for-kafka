@@ -30,9 +30,9 @@ services:
       - "7777:7777"
     environment:
       CONFIG_PATH: /app/config/config.yaml
-      # JAVA_OPTS: "-javaagent:/app/monitoring/jmx_prometheus_javaagent-1.0.1.jar=0.0.0.0:7777:/app/monitoring/kafka_streams.yml"
+      JAVA_OPTS: "-javaagent:/app/monitoring/jmx_prometheus_javaagent-1.0.1.jar=0.0.0.0:7777:/app/monitoring/kafka_streams.yml"
     volumes:
       - ./configuration/config.yaml:/app/config/config.yaml
-      # - ./monitoring:/app/monitoring
+      - ./monitoring:/app/monitoring
     depends_on:
       - kafka

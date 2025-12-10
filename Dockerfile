@@ -16,9 +16,7 @@ COPY --from=build /app/build/libs/kafka-as-a-microservice-standalone-*.jar /app/
 # Create directories for configurations and monitoring
 RUN mkdir -p /app/config /app/monitoring
 
-# Copy monitoring files
-COPY monitoring/jmx_prometheus_javaagent-1.0.1.jar /app/monitoring/
-COPY monitoring/kafka_streams.yml /app/monitoring/
+
 
 # Copy the start script
 COPY scripts/docker_start.sh /app/scripts/
