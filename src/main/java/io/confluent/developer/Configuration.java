@@ -372,19 +372,12 @@ public class Configuration {
             
             // Parse avro config if present
             if (serializerData.containsKey("avro")) {
-                logger.info("Includes avro");
                 Map<String, Object> avroData = (Map<String, Object>) serializerData.get("avro");
                 AvroConfig avroConfig = new AvroConfig();
                 if (avroData.containsKey("includeType")) {
-                    logger.info("Includes includeType, value:"+avroData.get("includeType"));
                     avroConfig.setIncludeType((Boolean) avroData.get("includeType"));
-
-                    logger.info("bool  value:", (Boolean) avroData.get("includeType"));
                 }
                 serializerConfig.setAvro(avroConfig);
-            } else {
-                logger.info("Does not include avro");
-                
             }
         }
         return serializerConfig;
