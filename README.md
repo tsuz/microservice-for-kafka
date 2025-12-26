@@ -142,7 +142,7 @@ Also, the results will vary based on hardware, query method, and disk type.
 | Data Type | Status |
 |--|--|
 | String | ✅
-| Avro | 
+| Avro | ✅
 | Int | 
 
 

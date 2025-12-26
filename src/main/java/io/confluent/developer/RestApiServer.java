@@ -14,6 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.avro.generic.GenericRecord;
+import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StoreQueryParameters;
 import org.apache.kafka.streams.state.QueryableStoreTypes;
@@ -30,6 +31,9 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
 import io.confluent.developer.Configuration.AvroConfig;
+import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.developer.Configuration.MethodConfig;
 
 import static io.confluent.developer.AvroJsonConverter.toJsonNode;
 import static io.confluent.developer.AvroJsonConverter.toJsonNodeWithTypes;
@@ -45,10 +49,27 @@ public class RestApiServer {
 
     private static final Logger logger = LoggerFactory.getLogger(RestApiServer.class);
 
+    // Schema Registry client
+    private final SchemaRegistryClient schemaRegistryClient;
+
     public RestApiServer(KafkaStreams streams, Configuration config, int port) {
         this.streams = streams;
         this.config = config;
         this.port = port;
+        
+            // Get the Schema Registry config (reuse existing method!)
+        Map<String, ?> srConfig = KafkaStreamsApplication.buildSchemaRegistryConfigMap(
+            config.getKafkaConfig()
+        );
+        
+        String schemaRegistryUrl = (String) srConfig.get("schema.registry.url");
+        
+        // Create the client
+        this.schemaRegistryClient = new CachedSchemaRegistryClient(
+            schemaRegistryUrl,
+            1000,  // cache size (number of schemas to cache)
+            srConfig
+        );
     }
 
     public void start() throws IOException {
@@ -213,12 +234,8 @@ public class RestApiServer {
                         var entry = iterator.next();
                         
                         try {
-                            String keySerializer = methodConfig.getKafka().getSerializer().getKey();
-                            JsonNode keyNode = serialize(entry.key, keySerializer, methodConfig);
-                            String valueSerializer = methodConfig.getKafka().getSerializer().getValue();
-                            JsonNode valueNode = serialize(entry.value, valueSerializer, methodConfig);
-                            JsonNode mergedNode = mergeKeyIntoValue(keyNode, valueNode);
-                            jsonArray.add(mergedNode);
+                            JsonNode item = processValue(entry, methodConfig);
+                            jsonArray.add(item);
                         } catch (IOException e) {
                             logger.warn("Skipping entry IOException - {}", e.getMessage());
                         }
@@ -239,6 +256,22 @@ public class RestApiServer {
             
             String result = objectMapper.writeValueAsString(jsonArray);
             return result;
+        }
+
+        private JsonNode processValue(KeyValue<Object, Object> entry, MethodConfig methodConfig) throws IOException {
+            boolean mergeKey = methodConfig.getKafka().isMergeKey();
+            String valueSerializer = methodConfig.getKafka().getSerializer().getValue();
+            JsonNode valueNode = serialize(entry.value, valueSerializer, methodConfig);
+
+            if (!mergeKey) {
+                return valueNode;
+            }
+
+            String keySerializer = methodConfig.getKafka().getSerializer().getKey();
+            JsonNode keyNode = serialize(entry.key, keySerializer, methodConfig);
+            JsonNode mergedNode = mergeKeyIntoValue(keyNode, valueNode);
+
+            return mergedNode;
         }
 
         private JsonNode mergeKeyIntoValue(JsonNode keyNode, JsonNode valueNode) {
@@ -318,13 +351,41 @@ public class RestApiServer {
 
         private String getValue(String id, Configuration.MethodConfig methodConfig) throws IOException {
             String storeName = methodConfig.getKafka().getTopic() + "-store";
+            
             ReadOnlyKeyValueStore<Object, Object> keyValueStore =
                     streams.store(StoreQueryParameters.fromNameAndType(storeName, QueryableStoreTypes.keyValueStore()));
-            Object value = keyValueStore.get(id);
+
+            String keySerializer = methodConfig.getKafka().getSerializer().getKey();
+
+            Object key = id;
+            
+            // build a key for avro
+            if ("avro".equalsIgnoreCase(keySerializer)) {
+                String keyField = "productId"; // methodConfig.getKafka().getSerializer().getKeyField();
+                String topic = methodConfig.getKafka().getTopic();
+                
+                try {
+                    key = AvroKeyBuilder.buildKey(
+                        schemaRegistryClient,
+                        topic, 
+                        keyField, 
+                        id
+                    );
+                    
+                    logger.info("Built Avro key: {}", key);
+                } catch (Exception e) {
+                    logger.error("Failed to build Avro key", e);
+                    throw new IOException("Failed to build Avro key: " + e.getMessage(), e);
+                }
+            }
+
+            Object value = keyValueStore.get(key);
             if (value != null) {
-                        logger.info("Value was non null");
-                JsonNode jsonNode = serialize(value, methodConfig.getKafka().getSerializer().getValue(), methodConfig);
-                return objectMapper.writeValueAsString(jsonNode);
+                // This ensures consistent mergeKey behavior between getAllValues() and getValue()
+                KeyValue<Object, Object> entry = new KeyValue<>(key, value);
+                JsonNode resultNode = processValue(entry, methodConfig);
+                
+                return objectMapper.writeValueAsString(resultNode);
             }
             return null;
         }

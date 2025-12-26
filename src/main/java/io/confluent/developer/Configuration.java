@@ -59,6 +59,7 @@ public class Configuration {
         private String topic;
         private QueryConfig query;
         private SerializerConfig serializer;
+        private boolean mergeKey = false;
 
         public String getTopic() { return topic; }
         public void setTopic(String topic) { this.topic = topic; }
@@ -66,6 +67,8 @@ public class Configuration {
         public void setQuery(QueryConfig query) { this.query = query; }
         public SerializerConfig getSerializer() { return serializer; }
         public void setSerializer(SerializerConfig serializer) { this.serializer = serializer; }
+        public boolean isMergeKey() { return mergeKey; }
+        public void setMergeKey(boolean mergeKey) { this.mergeKey = mergeKey; }
     }
 
     public static class QueryConfig {
@@ -352,6 +355,12 @@ public class Configuration {
         kafkaConfig.setTopic((String) kafkaData.get("topic"));
         kafkaConfig.setQuery(parseQueryConfig((Map<String, Object>) kafkaData.get("query")));
         kafkaConfig.setSerializer(parseSerializerConfig((Map<String, Object>) kafkaData.get("serializer")));
+        
+        // Parse mergeKey if present
+        if (kafkaData.containsKey("mergeKey")) {
+            kafkaConfig.setMergeKey((Boolean) kafkaData.get("mergeKey"));
+        }
+        
         return kafkaConfig;
     }
 
