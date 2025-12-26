@@ -1,24 +1,19 @@
 package io.confluent.developer;
 
-import com.sun.net.httpserver.HttpServer;
-
-import io.confluent.kafka.streams.serdes.json.KafkaJsonSchemaSerde;
-
-import com.sun.net.httpserver.HttpHandler;
-import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.google.protobuf.DynamicMessage;
-import com.sun.net.httpserver.HttpExchange;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.InetSocketAddress;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 import org.apache.avro.generic.GenericRecord;
-import org.apache.avro.io.DatumWriter;
-import org.apache.avro.io.EncoderFactory;
-import org.apache.avro.io.JsonEncoder;
-import org.apache.avro.specific.SpecificDatumWriter;
-import org.apache.commons.io.output.ByteArrayOutputStream;
-import org.apache.kafka.common.serialization.Serde;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StoreQueryParameters;
 import org.apache.kafka.streams.state.QueryableStoreTypes;
@@ -26,14 +21,18 @@ import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.google.protobuf.DynamicMessage;
+import com.sun.net.httpserver.HttpExchange;
+import com.sun.net.httpserver.HttpHandler;
+import com.sun.net.httpserver.HttpServer;
 
-import java.io.IOException;
-import java.io.OutputStream;
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-import java.util.*;
+import io.confluent.developer.Configuration.AvroConfig;
+
+import static io.confluent.developer.AvroJsonConverter.toJsonNode;
+import static io.confluent.developer.AvroJsonConverter.toJsonNodeWithTypes;
 
 public class RestApiServer {
     private final KafkaStreams streams;
@@ -206,7 +205,7 @@ public class RestApiServer {
             keyValueStore.all().forEachRemaining(entry -> {
                 try {
                     logger.debug("Found Key: " +  (String)entry.key);
-                    JsonNode jsonNode = serializeValue(entry.value, methodConfig.getKafka().getSerializer().getValue());
+                    JsonNode jsonNode = serializeValue(entry.value, methodConfig);
                     jsonArray.add(jsonNode);
                 } catch (IOException e) {
                     logger.error("Error serializing value: " + entry.value, e);
@@ -216,7 +215,8 @@ public class RestApiServer {
             return objectMapper.writeValueAsString(jsonArray);
         }
 
-        private JsonNode serializeValue(Object value, String serializerType) throws IOException {
+        private JsonNode serializeValue(Object value, Configuration.MethodConfig methodConfig) throws IOException {
+            String serializerType = methodConfig.getKafka().getSerializer().getValue();
             switch (serializerType.toLowerCase()) {
                 case "string":
                     return objectMapper.readTree((String) value);
@@ -230,13 +230,7 @@ public class RestApiServer {
                 case "bytes":
                     return objectMapper.valueToTree(new String((byte[]) value, StandardCharsets.UTF_8));
                 case "avro":
-                    GenericRecord avroRecord = (GenericRecord) value;
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    JsonEncoder jsonEncoder = EncoderFactory.get().jsonEncoder(avroRecord.getSchema(), baos);
-                    DatumWriter<GenericRecord> writer = new SpecificDatumWriter<>(avroRecord.getSchema());
-                    writer.write(avroRecord, jsonEncoder);
-                    jsonEncoder.flush();
-                    return objectMapper.readTree(baos.toString());
+                    return handleAvro((GenericRecord) value, methodConfig.getKafka().getSerializer().getAvro());
                 case "protobuf":
                     DynamicMessage protoMessage = (DynamicMessage) value;
                     String jsonString = PROTO_PRINTER.print(protoMessage);
@@ -254,13 +248,75 @@ public class RestApiServer {
             }
         }
 
+        private JsonNode handleAvro(Object value, AvroConfig config) throws IOException {
+                        GenericRecord avroRecord = (GenericRecord) value;
+            // Check if includeType is set
+            boolean includeType = false;
+            if (config != null) {
+                includeType = config.isIncludeType();
+            }
+            
+            if (includeType) {
+                return AvroJsonConverter.toJsonNodeWithTypes(avroRecord);
+            } else {
+                return AvroJsonConverter.toJsonNode(avroRecord);
+            }
+        } 
+
+        /**
+         * Converts an Avro GenericRecord to a clean JsonNode without type wrappers
+         */
+        private JsonNode avroRecordToJsonNode(GenericRecord record) {
+            com.fasterxml.jackson.databind.node.ObjectNode jsonNode = objectMapper.createObjectNode();
+            
+            record.getSchema().getFields().forEach(field -> {
+                String fieldName = field.name();
+                Object fieldValue = record.get(fieldName);
+                
+                if (fieldValue == null) {
+                    jsonNode.putNull(fieldName);
+                } else if (fieldValue instanceof CharSequence) {
+                    jsonNode.put(fieldName, fieldValue.toString());
+                } else if (fieldValue instanceof Integer) {
+                    jsonNode.put(fieldName, (Integer) fieldValue);
+                } else if (fieldValue instanceof Long) {
+                    jsonNode.put(fieldName, (Long) fieldValue);
+                } else if (fieldValue instanceof Float) {
+                    jsonNode.put(fieldName, (Float) fieldValue);
+                } else if (fieldValue instanceof Double) {
+                    jsonNode.put(fieldName, (Double) fieldValue);
+                } else if (fieldValue instanceof Boolean) {
+                    jsonNode.put(fieldName, (Boolean) fieldValue);
+                } else if (fieldValue instanceof GenericRecord) {
+                    // Recursively handle nested records
+                    jsonNode.set(fieldName, avroRecordToJsonNode((GenericRecord) fieldValue));
+                } else if (fieldValue instanceof Collection) {
+                    // Handle arrays
+                    com.fasterxml.jackson.databind.node.ArrayNode arrayNode = objectMapper.createArrayNode();
+                    ((Collection<?>) fieldValue).forEach(item -> {
+                        if (item instanceof GenericRecord) {
+                            arrayNode.add(avroRecordToJsonNode((GenericRecord) item));
+                        } else {
+                            arrayNode.add(objectMapper.valueToTree(item));
+                        }
+                    });
+                    jsonNode.set(fieldName, arrayNode);
+                } else {
+                    // Fallback for other types
+                    jsonNode.set(fieldName, objectMapper.valueToTree(fieldValue));
+                }
+            });
+            
+            return jsonNode;
+        }
+
         private String getValue(String id, Configuration.MethodConfig methodConfig) throws IOException {
             String storeName = methodConfig.getKafka().getTopic() + "-store";
             ReadOnlyKeyValueStore<Object, Object> keyValueStore =
                     streams.store(StoreQueryParameters.fromNameAndType(storeName, QueryableStoreTypes.keyValueStore()));
             Object value = keyValueStore.get(id);
             if (value != null) {
-                JsonNode jsonNode = serializeValue(value, methodConfig.getKafka().getSerializer().getValue());
+                JsonNode jsonNode = serializeValue(value, methodConfig);
                 return objectMapper.writeValueAsString(jsonNode);
             }
             return null;

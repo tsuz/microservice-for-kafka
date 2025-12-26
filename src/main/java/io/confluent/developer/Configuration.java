@@ -81,11 +81,21 @@ public class Configuration {
     public static class SerializerConfig {
         private String key;
         private String value;
+        private AvroConfig avro;
 
         public String getKey() { return key; }
         public void setKey(String key) { this.key = key; }
         public String getValue() { return value; }
         public void setValue(String value) { this.value = value; }
+        public AvroConfig getAvro() { return avro; }
+        public void setAvro(AvroConfig avro) { this.avro = avro; }
+    }
+
+    public static class AvroConfig {
+        private boolean includeType = false; // Default to false
+
+        public boolean isIncludeType() { return includeType; }
+        public void setIncludeType(boolean includeType) { this.includeType = includeType; }
     }
 
     public static class ResponseConfig {
@@ -133,11 +143,7 @@ public class Configuration {
     }
 
     private void validate() throws IllegalArgumentException {
-        // validatePathAndKafka();
-
         for (Map.Entry<String, PathConfig> entry : paths.entrySet()) {
-
-        // for (PathConfig pathConfig : paths.values()) {
             String path = entry.getKey();
             PathConfig pathConfig = entry.getValue();
 
@@ -257,7 +263,6 @@ public class Configuration {
             definedParameters.add(param.getName());
         }
 
-        System.out.println("pathParameters " + pathParameters + ", definedParameters:"+definedParameters);
         if (!pathParameters.equals(definedParameters)) {
             throw new IllegalArgumentException("Mismatch between parameters in the URL path: " + pathParameters + " and configuration defined under `parameters`: " + definedParameters);
         }
@@ -364,6 +369,23 @@ public class Configuration {
         if (serializerData != null) {
             serializerConfig.setKey((String) serializerData.get("key"));
             serializerConfig.setValue((String) serializerData.get("value"));
+            
+            // Parse avro config if present
+            if (serializerData.containsKey("avro")) {
+                logger.info("Includes avro");
+                Map<String, Object> avroData = (Map<String, Object>) serializerData.get("avro");
+                AvroConfig avroConfig = new AvroConfig();
+                if (avroData.containsKey("includeType")) {
+                    logger.info("Includes includeType, value:"+avroData.get("includeType"));
+                    avroConfig.setIncludeType((Boolean) avroData.get("includeType"));
+
+                    logger.info("bool  value:", (Boolean) avroData.get("includeType"));
+                }
+                serializerConfig.setAvro(avroConfig);
+            } else {
+                logger.info("Does not include avro");
+                
+            }
         }
         return serializerConfig;
     }
