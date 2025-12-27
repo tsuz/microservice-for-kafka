@@ -14,6 +14,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.avro.generic.GenericRecord;
+import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StoreQueryParameters;
 import org.apache.kafka.streams.state.QueryableStoreTypes;
@@ -29,7 +30,9 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
-import io.confluent.developer.Configuration.AvroConfig;
+import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
+import io.confluent.developer.Configuration.MethodConfig;
 
 import static io.confluent.developer.AvroJsonConverter.toJsonNode;
 import static io.confluent.developer.AvroJsonConverter.toJsonNodeWithTypes;
@@ -45,10 +48,27 @@ public class RestApiServer {
 
     private static final Logger logger = LoggerFactory.getLogger(RestApiServer.class);
 
+    // Schema Registry client
+    private final SchemaRegistryClient schemaRegistryClient;
+
     public RestApiServer(KafkaStreams streams, Configuration config, int port) {
         this.streams = streams;
         this.config = config;
         this.port = port;
+        
+            // Get the Schema Registry config (reuse existing method!)
+        Map<String, ?> srConfig = KafkaStreamsApplication.buildSchemaRegistryConfigMap(
+            config.getKafkaConfig()
+        );
+        
+        String schemaRegistryUrl = (String) srConfig.get("schema.registry.url");
+        
+        // Create the client
+        this.schemaRegistryClient = new CachedSchemaRegistryClient(
+            schemaRegistryUrl,
+            1000,  // cache size (number of schemas to cache)
+            srConfig
+        );
     }
 
     public void start() throws IOException {
@@ -195,28 +215,93 @@ public class RestApiServer {
             }
         }
 
+        
         private String getAllValues(Configuration.MethodConfig methodConfig) throws IOException {
             String storeName = methodConfig.getKafka().getTopic() + "-store";
+            logger.info("Starting getAllValues for store: {}", storeName);
+
             ReadOnlyKeyValueStore<Object, Object> keyValueStore =
                     streams.store(StoreQueryParameters.fromNameAndType(storeName, QueryableStoreTypes.keyValueStore()));
 
             ArrayNode jsonArray = objectMapper.createArrayNode();
-
-            keyValueStore.all().forEachRemaining(entry -> {
-                try {
-                    logger.debug("Found Key: " +  (String)entry.key);
-                    JsonNode jsonNode = serializeValue(entry.value, methodConfig);
-                    jsonArray.add(jsonNode);
-                } catch (IOException e) {
-                    logger.error("Error serializing value: " + entry.value, e);
+            
+            try (var iterator = keyValueStore.all()) {
+                logger.info("Starting iteration over keyValueStore");
+                
+                while (iterator.hasNext()) {
+                    try {
+                        var entry = iterator.next();
+                        
+                        try {
+                            JsonNode item = processValue(entry, methodConfig);
+                            jsonArray.add(item);
+                        } catch (IOException e) {
+                            logger.warn("Skipping entry IOException - {}", e.getMessage());
+                        }
+                        
+                    } catch (org.apache.kafka.common.errors.SerializationException e) {
+                        // Schema deserialization failed - this record is corrupted/incompatible
+                        logger.warn("Skipping record due to deserialization error: {}", e.getMessage());
+                        // The iterator has moved past this record, continue to next
+                        break;
+                    } catch (Exception e) {
+                        // Unexpected error - log and try to continue
+                        logger.error("Unexpected error during iteration: {}", e.getMessage(), e);
+                    }
                 }
-            });
-
-            return objectMapper.writeValueAsString(jsonArray);
+            } catch (Exception e) {
+                logger.error("Fatal exception during iteration: {}", e.getMessage(), e);
+            }
+            
+            String result = objectMapper.writeValueAsString(jsonArray);
+            return result;
         }
 
-        private JsonNode serializeValue(Object value, Configuration.MethodConfig methodConfig) throws IOException {
-            String serializerType = methodConfig.getKafka().getSerializer().getValue();
+        private JsonNode processValue(KeyValue<Object, Object> entry, MethodConfig methodConfig) throws IOException {
+            boolean mergeKey = methodConfig.getKafka().isMergeKey();
+            String valueSerializer = methodConfig.getKafka().getSerializer().getValue();
+            JsonNode valueNode = serialize(entry.value, valueSerializer, methodConfig);
+
+            if (!mergeKey) {
+                return valueNode;
+            }
+
+            String keySerializer = methodConfig.getKafka().getSerializer().getKey();
+            JsonNode keyNode = serialize(entry.key, keySerializer, methodConfig);
+            JsonNode mergedNode = mergeKeyIntoValue(keyNode, valueNode);
+
+            return mergedNode;
+        }
+
+        private JsonNode mergeKeyIntoValue(JsonNode keyNode, JsonNode valueNode) {
+            // If value is not an object, return it as-is
+            if (!valueNode.isObject()) {
+                return valueNode;
+            }
+
+            // If key is not an object, return value as-is
+            if (!keyNode.isObject()) {
+                logger.warn("merge failed - key is not an object");
+                return valueNode;
+            }
+
+            // Merge key fields into value
+            com.fasterxml.jackson.databind.node.ObjectNode result = objectMapper.createObjectNode();
+            
+            // First add all key fields
+            keyNode.properties().forEach(entry -> {
+                result.set(entry.getKey(), entry.getValue());
+            });
+            
+            // Then add all value fields (will override key fields if same name exists)
+            valueNode.properties().forEach(entry -> {
+                result.set(entry.getKey(), entry.getValue());
+            });
+            
+            return result;
+        }
+
+        private JsonNode serialize(Object value, String serializerType, Configuration.MethodConfig methodConfig) throws IOException {
             switch (serializerType.toLowerCase()) {
                 case "string":
                     return objectMapper.readTree((String) value);
@@ -230,7 +315,7 @@ public class RestApiServer {
                 case "bytes":
                     return objectMapper.valueToTree(new String((byte[]) value, StandardCharsets.UTF_8));
                 case "avro":
-                    return handleAvro((GenericRecord) value, methodConfig.getKafka().getSerializer().getAvro());
+                    return handleAvro((GenericRecord) value, methodConfig);
                 case "protobuf":
                     DynamicMessage protoMessage = (DynamicMessage) value;
                     String jsonString = PROTO_PRINTER.print(protoMessage);
@@ -248,76 +333,63 @@ public class RestApiServer {
             }
         }
 
-        private JsonNode handleAvro(Object value, AvroConfig config) throws IOException {
-                        GenericRecord avroRecord = (GenericRecord) value;
-            // Check if includeType is set
-            boolean includeType = false;
-            if (config != null) {
-                includeType = config.isIncludeType();
-            }
+        private JsonNode handleAvro(Object value, Configuration.MethodConfig methodConfig) throws IOException {
+            GenericRecord avroRecord = (GenericRecord) value;
+            // Check if includeType is set in kafka config
+            boolean includeType = methodConfig.getKafka().isIncludeType();
             
             if (includeType) {
                 return AvroJsonConverter.toJsonNodeWithTypes(avroRecord);
             } else {
                 return AvroJsonConverter.toJsonNode(avroRecord);
             }
-        } 
-
-        /**
-         * Converts an Avro GenericRecord to a clean JsonNode without type wrappers
-         */
-        private JsonNode avroRecordToJsonNode(GenericRecord record) {
-            com.fasterxml.jackson.databind.node.ObjectNode jsonNode = objectMapper.createObjectNode();
-            
-            record.getSchema().getFields().forEach(field -> {
-                String fieldName = field.name();
-                Object fieldValue = record.get(fieldName);
-                
-                if (fieldValue == null) {
-                    jsonNode.putNull(fieldName);
-                } else if (fieldValue instanceof CharSequence) {
-                    jsonNode.put(fieldName, fieldValue.toString());
-                } else if (fieldValue instanceof Integer) {
-                    jsonNode.put(fieldName, (Integer) fieldValue);
-                } else if (fieldValue instanceof Long) {
-                    jsonNode.put(fieldName, (Long) fieldValue);
-                } else if (fieldValue instanceof Float) {
-                    jsonNode.put(fieldName, (Float) fieldValue);
-                } else if (fieldValue instanceof Double) {
-                    jsonNode.put(fieldName, (Double) fieldValue);
-                } else if (fieldValue instanceof Boolean) {
-                    jsonNode.put(fieldName, (Boolean) fieldValue);
-                } else if (fieldValue instanceof GenericRecord) {
-                    // Recursively handle nested records
-                    jsonNode.set(fieldName, avroRecordToJsonNode((GenericRecord) fieldValue));
-                } else if (fieldValue instanceof Collection) {
-                    // Handle arrays
-                    com.fasterxml.jackson.databind.node.ArrayNode arrayNode = objectMapper.createArrayNode();
-                    ((Collection<?>) fieldValue).forEach(item -> {
-                        if (item instanceof GenericRecord) {
-                            arrayNode.add(avroRecordToJsonNode((GenericRecord) item));
-                        } else {
-                            arrayNode.add(objectMapper.valueToTree(item));
-                        }
-                    });
-                    jsonNode.set(fieldName, arrayNode);
-                } else {
-                    // Fallback for other types
-                    jsonNode.set(fieldName, objectMapper.valueToTree(fieldValue));
-                }
-            });
-            
-            return jsonNode;
         }
 
         private String getValue(String id, Configuration.MethodConfig methodConfig) throws IOException {
             String storeName = methodConfig.getKafka().getTopic() + "-store";
+            
             ReadOnlyKeyValueStore<Object, Object> keyValueStore =
                     streams.store(StoreQueryParameters.fromNameAndType(storeName, QueryableStoreTypes.keyValueStore()));
-            Object value = keyValueStore.get(id);
+
+            String keySerializer = methodConfig.getKafka().getSerializer().getKey();
+
+            Object key = id;
+            
+            // build a key for avro
+            if ("avro".equalsIgnoreCase(keySerializer)) {
+                String keyField = methodConfig.getKafka().getKeyField();
+                
+                // Validate that keyField is present
+                if (keyField == null || keyField.isEmpty()) {
+                    throw new IllegalArgumentException(
+                        "keyField must be configured in kafka section when using Avro keys. " +
+                        "Example: kafka.keyField: productId"
+                    );
+                }
+                
+                String topic = methodConfig.getKafka().getTopic();
+                
+                try {
+                    key = AvroKeyBuilder.buildKey(
+                        schemaRegistryClient,
+                        topic, 
+                        keyField, 
+                        id
+                    );
+                    
+                } catch (Exception e) {
+                    logger.error("Failed to build Avro key with field '{}'", keyField, e);
+                    throw new IOException("Failed to build Avro key: " + e.getMessage(), e);
+                }
+            }
+
+            Object value = keyValueStore.get(key);
             if (value != null) {
-                JsonNode jsonNode = serializeValue(value, methodConfig);
-                return objectMapper.writeValueAsString(jsonNode);
+                // This ensures consistent mergeKey behavior between getAllValues() and getValue()
+                KeyValue<Object, Object> entry = new KeyValue<>(key, value);
+                JsonNode resultNode = processValue(entry, methodConfig);
+                
+                return objectMapper.writeValueAsString(resultNode);
             }
             return null;
         }

@@ -107,8 +107,8 @@ public class KafkaStreamsApplication {
     }
 
     private static <K, V> void processEndpoint(StreamsBuilder builder, Configuration.PathConfig pathConfig, Configuration.MethodConfig methodConfig) {
-        Serde<K> keySerde = (Serde<K>) getSerdeForType(methodConfig.getKafka().getSerializer().getKey());
-        Serde<V> valueSerde = (Serde<V>) getSerdeForType(methodConfig.getKafka().getSerializer().getValue());
+        Serde<K> keySerde = (Serde<K>) getSerdeForType(methodConfig.getKafka().getSerializer().getKey(), true);
+        Serde<V> valueSerde = (Serde<V>) getSerdeForType(methodConfig.getKafka().getSerializer().getValue(), false);
 
         String topic = methodConfig.getKafka().getTopic();
         String storeName = topic + "-store";
@@ -129,7 +129,7 @@ public class KafkaStreamsApplication {
     }
 
 
-    private static Serde<?> getSerdeForType(String serializerType) {
+    private static Serde<?> getSerdeForType(String serializerType, boolean isKey) {
         switch (serializerType.toLowerCase()) {
             case "string":
                 return Serdes.String();
@@ -147,15 +147,15 @@ public class KafkaStreamsApplication {
                 return Serdes.ByteArray();
             case "avro":
                 Serde<GenericRecord> avroSerde = new GenericAvroSerde();
-                avroSerde.configure(buildSchemaRegistryConfigMap(config.getKafkaConfig()), false);
+                avroSerde.configure(buildSchemaRegistryConfigMap(config.getKafkaConfig()), isKey);
                 return avroSerde;
             case "protobuf":
                 Serde<DynamicMessage> protobufSerde = new KafkaProtobufSerde<>();
-                protobufSerde.configure(buildSchemaRegistryConfigMap(config.getKafkaConfig()), false);
+                protobufSerde.configure(buildSchemaRegistryConfigMap(config.getKafkaConfig()), isKey);
                 return protobufSerde;
             case "jsonsr":
                 Serde<JsonNode> jsonSchemaSerde = new KafkaJsonSchemaSerde<>();
-                jsonSchemaSerde.configure(buildSchemaRegistryConfigMap(config.getKafkaConfig()), false);
+                jsonSchemaSerde.configure(buildSchemaRegistryConfigMap(config.getKafkaConfig()), isKey);
                 return jsonSchemaSerde;
             default:
                 throw new IllegalArgumentException("Unsupported serializer type: " + serializerType);

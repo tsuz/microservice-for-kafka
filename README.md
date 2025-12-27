@@ -48,8 +48,6 @@ paths:
         serializer:
           key: string
           value: avro
-          avro:
-            includeType: true # Includes types in each JSON field (Default: false)
       responses:
         '200':
           description: A list of flights
@@ -142,7 +140,7 @@ Also, the results will vary based on hardware, query method, and disk type.
 | Data Type | Status |
 |--|--|
 | String | ✅
-| Avro | 
+| Avro | ✅
 | Int | 
 
 
