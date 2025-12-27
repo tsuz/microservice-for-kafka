@@ -30,7 +30,6 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
-import io.confluent.developer.Configuration.AvroConfig;
 import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient;
 import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient;
 import io.confluent.developer.Configuration.MethodConfig;
@@ -282,7 +281,7 @@ public class RestApiServer {
 
             // If key is not an object, return value as-is
             if (!keyNode.isObject()) {
-                logger.warn("merge failed");
+                logger.warn("merge failed - key is not an object");
                 return valueNode;
             }
 
@@ -316,7 +315,7 @@ public class RestApiServer {
                 case "bytes":
                     return objectMapper.valueToTree(new String((byte[]) value, StandardCharsets.UTF_8));
                 case "avro":
-                    return handleAvro((GenericRecord) value, methodConfig.getKafka().getSerializer().getAvro());
+                    return handleAvro((GenericRecord) value, methodConfig);
                 case "protobuf":
                     DynamicMessage protoMessage = (DynamicMessage) value;
                     String jsonString = PROTO_PRINTER.print(protoMessage);
@@ -334,13 +333,10 @@ public class RestApiServer {
             }
         }
 
-        private JsonNode handleAvro(Object value, AvroConfig config) throws IOException {
-                        GenericRecord avroRecord = (GenericRecord) value;
-            // Check if includeType is set
-            boolean includeType = false;
-            if (config != null) {
-                includeType = config.isIncludeType();
-            }
+        private JsonNode handleAvro(Object value, Configuration.MethodConfig methodConfig) throws IOException {
+            GenericRecord avroRecord = (GenericRecord) value;
+            // Check if includeType is set in kafka config
+            boolean includeType = methodConfig.getKafka().isIncludeType();
             
             if (includeType) {
                 return AvroJsonConverter.toJsonNodeWithTypes(avroRecord);
@@ -361,7 +357,16 @@ public class RestApiServer {
             
             // build a key for avro
             if ("avro".equalsIgnoreCase(keySerializer)) {
-                String keyField = "productId"; // methodConfig.getKafka().getSerializer().getKeyField();
+                String keyField = methodConfig.getKafka().getKeyField();
+                
+                // Validate that keyField is present
+                if (keyField == null || keyField.isEmpty()) {
+                    throw new IllegalArgumentException(
+                        "keyField must be configured in kafka section when using Avro keys. " +
+                        "Example: kafka.keyField: productId"
+                    );
+                }
+                
                 String topic = methodConfig.getKafka().getTopic();
                 
                 try {
@@ -372,9 +377,8 @@ public class RestApiServer {
                         id
                     );
                     
-                    logger.info("Built Avro key: {}", key);
                 } catch (Exception e) {
-                    logger.error("Failed to build Avro key", e);
+                    logger.error("Failed to build Avro key with field '{}'", keyField, e);
                     throw new IOException("Failed to build Avro key: " + e.getMessage(), e);
                 }
             }

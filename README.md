@@ -48,8 +48,6 @@ paths:
         serializer:
           key: string
           value: avro
-          avro:
-            includeType: true # Includes types in each JSON field (Default: false)
       responses:
         '200':
           description: A list of flights

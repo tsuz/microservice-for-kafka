@@ -60,6 +60,8 @@ public class Configuration {
         private QueryConfig query;
         private SerializerConfig serializer;
         private boolean mergeKey = false;
+        private boolean includeType = false;
+        private String keyField;
 
         public String getTopic() { return topic; }
         public void setTopic(String topic) { this.topic = topic; }
@@ -69,6 +71,10 @@ public class Configuration {
         public void setSerializer(SerializerConfig serializer) { this.serializer = serializer; }
         public boolean isMergeKey() { return mergeKey; }
         public void setMergeKey(boolean mergeKey) { this.mergeKey = mergeKey; }
+        public boolean isIncludeType() { return includeType; }
+        public void setIncludeType(boolean includeType) { this.includeType = includeType; }
+        public String getKeyField() { return keyField; }
+        public void setKeyField(String keyField) { this.keyField = keyField; }
     }
 
     public static class QueryConfig {
@@ -84,21 +90,11 @@ public class Configuration {
     public static class SerializerConfig {
         private String key;
         private String value;
-        private AvroConfig avro;
 
         public String getKey() { return key; }
         public void setKey(String key) { this.key = key; }
         public String getValue() { return value; }
         public void setValue(String value) { this.value = value; }
-        public AvroConfig getAvro() { return avro; }
-        public void setAvro(AvroConfig avro) { this.avro = avro; }
-    }
-
-    public static class AvroConfig {
-        private boolean includeType = false; // Default to false
-
-        public boolean isIncludeType() { return includeType; }
-        public void setIncludeType(boolean includeType) { this.includeType = includeType; }
     }
 
     public static class ResponseConfig {
@@ -298,6 +294,15 @@ public class Configuration {
         if (keySerializer == null || (!keySerializer.equals("string") && !keySerializer.equals("avro"))) {
             throw new IllegalArgumentException("`kafka.serializer.key` must be set and is one of 'string' or 'avro' for path: " + path);
         }
+        
+        // If key serializer is avro, keyField must be set
+        if ("avro".equalsIgnoreCase(keySerializer)) {
+            String keyField = kafka.getKeyField();
+            if (keyField == null || keyField.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "`kafka.keyField` must be set when `kafka.serializer.key` is 'avro' for path: " + path);
+            }
+        }
     
         // Check kafka.serializer.value
         String valueSerializer = serializer.getValue();
@@ -356,9 +361,19 @@ public class Configuration {
         kafkaConfig.setQuery(parseQueryConfig((Map<String, Object>) kafkaData.get("query")));
         kafkaConfig.setSerializer(parseSerializerConfig((Map<String, Object>) kafkaData.get("serializer")));
         
-        // Parse mergeKey if present
+        // Parse mergeKey if present (default: false)
         if (kafkaData.containsKey("mergeKey")) {
             kafkaConfig.setMergeKey((Boolean) kafkaData.get("mergeKey"));
+        }
+        
+        // Parse includeType if present (default: false)
+        if (kafkaData.containsKey("includeType")) {
+            kafkaConfig.setIncludeType((Boolean) kafkaData.get("includeType"));
+        }
+        
+        // Parse keyField if present (required when key serializer is avro)
+        if (kafkaData.containsKey("keyField")) {
+            kafkaConfig.setKeyField((String) kafkaData.get("keyField"));
         }
         
         return kafkaConfig;
@@ -378,16 +393,6 @@ public class Configuration {
         if (serializerData != null) {
             serializerConfig.setKey((String) serializerData.get("key"));
             serializerConfig.setValue((String) serializerData.get("value"));
-            
-            // Parse avro config if present
-            if (serializerData.containsKey("avro")) {
-                Map<String, Object> avroData = (Map<String, Object>) serializerData.get("avro");
-                AvroConfig avroConfig = new AvroConfig();
-                if (avroData.containsKey("includeType")) {
-                    avroConfig.setIncludeType((Boolean) avroData.get("includeType"));
-                }
-                serializerConfig.setAvro(avroConfig);
-            }
         }
         return serializerConfig;
     }

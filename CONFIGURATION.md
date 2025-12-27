@@ -27,7 +27,6 @@ paths:
           key: string
           value: avro
         mergeKey: true
-      avro:
         includeType: true
       responses:
         '200':
@@ -64,20 +63,38 @@ where
 
 ## Config Object
 
-| top-level field | description |
-|--|--|
-| description | comment that describes this endpoint. This object does not have an effect on the functionality of this API. |
-| kafka | message level config such as topics, query method and serializers |
-| avro | if using avro, this is additional avro setting | 
-| responses | response object that conforms to the OpenAPI. This object does not have an effect on the functionality of this API. | 
+### description
 
-### Kafka Object
+Default: ""
+
+Comment that describes this endpoint. This object does not have an effect on the functionality of this API. 
+
+
+### Kafka
+
+Default: Object
+
+Message level config such as topics, query method and serializers
+
+```
+kafka:  
+  topic: inventory_20251222_1748
+  query:
+    method: all
+  serializer:
+    key: avro
+    value: avro
+  mergeKey: true
+  keyField: productId
+```
 
 #### mergeKey
 
 Default: false
 
 If set to true, then it will merge the key into the value and send it back in the response.
+
+This is only supported for Avro.
 
 Suppose
 
@@ -103,7 +120,14 @@ if `mergeKey=false` then it will return
 }
 ```
 
-### Avro Object
+#### keyField
+
+Default: null
+
+This is required if serializer is avro.
+
+If key is an avro, then it requires a key field to look up the value. For example, if `keyField=productId` and the path is `/products/{id}`, then it looks up using key `{"productId": "{id}"}`. 
+
 
 #### includeType
 
@@ -134,3 +158,9 @@ whereas if false, then it returns:
     "updatedAt": 1766431139805
 }
 ```
+
+### responses
+
+response object that conforms to the OpenAPI. This object does not have an effect on the functionality of this API.
+
+
