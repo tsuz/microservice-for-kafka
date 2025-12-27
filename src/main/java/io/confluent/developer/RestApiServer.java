@@ -218,7 +218,6 @@ public class RestApiServer {
         
         private String getAllValues(Configuration.MethodConfig methodConfig) throws IOException {
             String storeName = methodConfig.getKafka().getTopic() + "-store";
-            logger.info("Starting getAllValues for store: {}", storeName);
 
             ReadOnlyKeyValueStore<Object, Object> keyValueStore =
                     streams.store(StoreQueryParameters.fromNameAndType(storeName, QueryableStoreTypes.keyValueStore()));
@@ -226,7 +225,6 @@ public class RestApiServer {
             ArrayNode jsonArray = objectMapper.createArrayNode();
             
             try (var iterator = keyValueStore.all()) {
-                logger.info("Starting iteration over keyValueStore");
                 
                 while (iterator.hasNext()) {
                     try {
