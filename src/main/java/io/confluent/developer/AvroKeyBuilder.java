@@ -12,6 +12,7 @@ import io.confluent.kafka.schemaregistry.avro.AvroSchema;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Utility class for constructing Avro GenericRecord keys from simple values
@@ -19,6 +20,9 @@ import java.util.Map;
 public class AvroKeyBuilder {
     
     private static final Logger logger = LoggerFactory.getLogger(AvroKeyBuilder.class);
+    
+    // Cache schemas by subject to avoid repeated lookups during runtime
+    private static final Map<String, ParsedSchema> SCHEMA_CACHE = new ConcurrentHashMap<>();
     
     /**
      * Builds an Avro GenericRecord key based on the topic's key schema
@@ -37,11 +41,16 @@ public class AvroKeyBuilder {
         
         String subject = topic + "-key";
         
-        // Get the schema ID
-        int schemaId = schemaRegistryClient.getLatestSchemaMetadata(subject).getId();
-        
-        // FIXED: getSchemaById returns ParsedSchema, not Schema
-        ParsedSchema parsedSchema = schemaRegistryClient.getSchemaById(schemaId);
+        // Check cache first
+        ParsedSchema parsedSchema = SCHEMA_CACHE.get(subject);
+        if (parsedSchema == null) {
+            // Cache miss - fetch from schema registry (only happens once per subject)
+            logger.info("Schema cache miss for subject '{}', fetching from registry", subject);
+            int schemaId = schemaRegistryClient.getLatestSchemaMetadata(subject).getId();
+            parsedSchema = schemaRegistryClient.getSchemaById(schemaId);
+            SCHEMA_CACHE.put(subject, parsedSchema);
+            logger.info("Cached schema for subject '{}'", subject);
+        }
         
         // Cast to AvroSchema to get the raw Avro Schema
         if (!(parsedSchema instanceof AvroSchema)) {
@@ -130,11 +139,16 @@ public class AvroKeyBuilder {
         
         String subject = topic + "-key";
         
-        // Get schema ID
-        int schemaId = schemaRegistryClient.getLatestSchemaMetadata(subject).getId();
-        
-        // Get ParsedSchema and cast to AvroSchema
-        ParsedSchema parsedSchema = schemaRegistryClient.getSchemaById(schemaId);
+        // Check cache first
+        ParsedSchema parsedSchema = SCHEMA_CACHE.get(subject);
+        if (parsedSchema == null) {
+            // Cache miss - fetch from schema registry (only happens once per subject)
+            logger.info("Schema cache miss for subject '{}', fetching from registry", subject);
+            int schemaId = schemaRegistryClient.getLatestSchemaMetadata(subject).getId();
+            parsedSchema = schemaRegistryClient.getSchemaById(schemaId);
+            SCHEMA_CACHE.put(subject, parsedSchema);
+            logger.info("Cached schema for subject '{}'", subject);
+        }
         
         if (!(parsedSchema instanceof AvroSchema)) {
             throw new IllegalArgumentException(
