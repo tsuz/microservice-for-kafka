@@ -176,6 +176,11 @@ public class KafkaStreamsApplication {
 
             KafkaStreams kafkaStreams = new KafkaStreams(buildTopology(config), props);
 
+            // Add restoration progress listener
+            RestorationProgressListener restorationListener = new RestorationProgressListener();
+            kafkaStreams.setGlobalStateRestoreListener(restorationListener);
+            logger.info("State restoration listener registered - restoration progress will be logged");
+
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
                 System.out.println("Shutting down the application...");
                 kafkaStreams.close();
