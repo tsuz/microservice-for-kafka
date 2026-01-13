@@ -40,41 +40,29 @@ public class RestApiMetrics implements DynamicMBean {
     public void recordRequest(String path, long latencyMs) {
         // Store the path as-is (no sanitization needed)
         LatencyTracker tracker = pathMetrics.computeIfAbsent(path, k -> {
-            logger.info("Creating new tracker for path: '{}'", k);
+            logger.debug("Creating new tracker for path: '{}'", k);
             return new LatencyTracker();
         });
         tracker.recordLatency(latencyMs);
-        logger.info("✅ Recorded - Path: '{}', Latency: {}ms, Count: {}, P90: {}, P999: {}", 
+        logger.debug("✅ Recorded - Path: '{}', Latency: {}ms, Count: {}, P90: {}, P999: {}", 
                 path, latencyMs, tracker.getRequestCount(), tracker.getP90(), tracker.getP999());
-    }
-    
-    public long getTotalRequestCount() {
-        return pathMetrics.values().stream()
-            .mapToLong(LatencyTracker::getRequestCount)
-            .sum();
     }
     
     // DynamicMBean implementation
     @Override
     public Object getAttribute(String attribute) throws AttributeNotFoundException {
-        logger.info("🔍 getAttribute called for: '{}'", attribute);
-        
-        if ("TotalRequestCount".equals(attribute)) {
-            long total = getTotalRequestCount();
-            logger.info("   → Returning TotalRequestCount: {}", total);
-            return total;
-        }
+        logger.debug("🔍 getAttribute called for: '{}'", attribute);
         
         // Parse attributes like "RequestCount_/inventory/1"
         if (attribute.startsWith("RequestCount_")) {
             String sanitizedPath = attribute.substring("RequestCount_".length());
-            logger.info("   → Looking for RequestCount, sanitizedPath: '{}'", sanitizedPath);
-            logger.info("   → Available keys in pathMetrics: {}", pathMetrics.keySet());
+            logger.debug("   → Looking for RequestCount, sanitizedPath: '{}'", sanitizedPath);
+            logger.debug("   → Available keys in pathMetrics: {}", pathMetrics.keySet());
             
             LatencyTracker tracker = pathMetrics.get(sanitizedPath);
             if (tracker != null) {
                 long count = tracker.getRequestCount();
-                logger.info("   → Found tracker, returning count: {}", count);
+                logger.debug("   → Found tracker, returning count: {}", count);
                 return count;
             } else {
                 logger.warn("   ⚠️ Tracker not found for sanitizedPath: '{}'", sanitizedPath);
@@ -158,14 +146,6 @@ public class RestApiMetrics implements DynamicMBean {
         
         // Build attribute list dynamically
         java.util.List<MBeanAttributeInfo> attributesList = new java.util.ArrayList<>();
-        
-        // Add total count
-        attributesList.add(new MBeanAttributeInfo(
-            "TotalRequestCount",
-            "long",
-            "Total number of requests across all paths",
-            true, false, false
-        ));
         
         // Add per-path attributes
         for (String path : pathMetrics.keySet()) {

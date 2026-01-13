@@ -102,15 +102,9 @@ rules:
     labels:
       client_type: $1
 
-  # Total request count
-  - pattern: "io.confluent.developer<type=RestApiMetrics><>TotalRequestCount"
-    name: rest_api_total_requests
-    type: GAUGE
-    help: "Total number of requests across all paths"
-  
   # Request count by path
   - pattern: 'io.confluent.developer<type=RestApiMetrics><>RequestCount_(.*): (.*)'
-    name: rest_api_requests_total
+    name: rest_api_requests_path_total
     type: GAUGE
     help: "Total Number of requests per path"
     labels:
@@ -119,7 +113,7 @@ rules:
   
   # P50 latency by path
   - pattern: 'io.confluent.developer<type=RestApiMetrics><>LatencyP50_(.*): (.*)'
-    name: rest_api_latency_p50_ms
+    name: rest_api_latency_ms_p50
     type: GAUGE
     help: "50th percentile (median) latency in milliseconds per path"
     labels:
@@ -128,7 +122,7 @@ rules:
   
   # P90 latency by path
   - pattern: 'io.confluent.developer<type=RestApiMetrics><>LatencyP90_(.*): (.*)'
-    name: rest_api_latency_p90_ms
+    name: rest_api_latency_ms_p90
     type: GAUGE
     help: "90th percentile latency in milliseconds per path"
     labels:
@@ -137,7 +131,7 @@ rules:
   
   # P95 latency by path
   - pattern: 'io.confluent.developer<type=RestApiMetrics><>LatencyP95_(.*): (.*)'
-    name: rest_api_latency_p95_ms
+    name: rest_api_latency_ms_p95
     type: GAUGE
     help: "95th percentile latency in milliseconds per path"
     labels:
@@ -146,7 +140,7 @@ rules:
   
   # P99 latency by path
   - pattern: 'io.confluent.developer<type=RestApiMetrics><>LatencyP99_(.*): (.*)'
-    name: rest_api_latency_p99_ms
+    name: rest_api_latency_ms_p99
     type: GAUGE
     help: "99th percentile latency in milliseconds per path"
     labels:
@@ -155,7 +149,7 @@ rules:
   
   # P99.9 latency by path
   - pattern: 'io.confluent.developer<type=RestApiMetrics><>LatencyP999_(.*): (.*)'
-    name: rest_api_latency_p999_ms
+    name: rest_api_latency_ms_p999
     type: GAUGE
     help: "99.9th percentile latency in milliseconds per path"
     labels:

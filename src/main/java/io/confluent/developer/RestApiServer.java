@@ -195,7 +195,7 @@ public class RestApiServer {
                 // Record metrics with the actual path (including path parameters)
                 long latencyMs = (System.nanoTime() - startTime) / 1_000_000;
                 RestApiServer.this.metrics.recordRequest(definedPath, latencyMs);
-                logger.info("[TIMING] recordRequest path: {}, latency: {}ms", definedPath, latencyMs);
+                logger.debug("[TIMING] recordRequest path: {}, latency: {}ms", definedPath, latencyMs);
             }
         }
     
