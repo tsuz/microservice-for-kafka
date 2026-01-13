@@ -156,8 +156,10 @@ public class RestApiServer {
         }
     
         public void handle(HttpExchange exchange) throws IOException {
+            long startTime = System.nanoTime();
+            String path = exchange.getRequestURI().getPath();
+            
             try {
-                String path = exchange.getRequestURI().getPath();
                 Matcher matcher = pathPattern.matcher(path);
                 if (matcher.matches()) {
                     Map<String, String> pathParams = extractPathParameters(matcher);
