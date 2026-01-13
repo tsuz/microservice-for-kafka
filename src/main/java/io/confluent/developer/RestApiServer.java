@@ -50,13 +50,14 @@ public class RestApiServer {
 
     // Schema Registry client
     private final SchemaRegistryClient schemaRegistryClient;
+    private final RestApiMetrics metrics;
 
     public RestApiServer(KafkaStreams streams, Configuration config, int port) {
         this.streams = streams;
         this.config = config;
         this.port = port;
-        
-            // Get the Schema Registry config (reuse existing method!)
+        this.metrics = new RestApiMetrics(); // Initialize metrics
+
         Map<String, ?> srConfig = KafkaStreamsApplication.buildSchemaRegistryConfigMap(
             config.getKafkaConfig()
         );
@@ -186,6 +187,11 @@ public class RestApiServer {
                 }
             } catch (IOException e) {
                 logger.error("Error serializing value: " + e.getMessage());
+            }  finally {
+                // Record metrics with the actual path (including path parameters)
+                long latencyMs = (System.nanoTime() - startTime) / 1_000_000;
+                RestApiServer.this.metrics.recordRequest(definedPath, latencyMs);
+                logger.info("[TIMING] recordRequest path: {}, latency: {}ms", definedPath, latencyMs);
             }
         }
     
