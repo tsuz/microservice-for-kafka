@@ -22,6 +22,8 @@ import org.apache.kafka.streams.state.ReadOnlyKeyValueStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import io.confluent.developer.metrics.RestApiMetrics;
+
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -50,13 +52,14 @@ public class RestApiServer {
 
     // Schema Registry client
     private final SchemaRegistryClient schemaRegistryClient;
+    private final RestApiMetrics metrics;
 
     public RestApiServer(KafkaStreams streams, Configuration config, int port) {
         this.streams = streams;
         this.config = config;
         this.port = port;
-        
-            // Get the Schema Registry config (reuse existing method!)
+        this.metrics = new RestApiMetrics(); // Initialize metrics
+
         Map<String, ?> srConfig = KafkaStreamsApplication.buildSchemaRegistryConfigMap(
             config.getKafkaConfig()
         );
@@ -153,8 +156,10 @@ public class RestApiServer {
         }
     
         public void handle(HttpExchange exchange) throws IOException {
+            long startTime = System.nanoTime();
+            String path = exchange.getRequestURI().getPath();
+            
             try {
-                String path = exchange.getRequestURI().getPath();
                 Matcher matcher = pathPattern.matcher(path);
                 if (matcher.matches()) {
                     Map<String, String> pathParams = extractPathParameters(matcher);
@@ -186,6 +191,11 @@ public class RestApiServer {
                 }
             } catch (IOException e) {
                 logger.error("Error serializing value: " + e.getMessage());
+            }  finally {
+                // Record metrics with the actual path (including path parameters)
+                long latencyMs = (System.nanoTime() - startTime) / 1_000_000;
+                RestApiServer.this.metrics.recordRequest(definedPath, latencyMs);
+                logger.debug("[TIMING] recordRequest path: {}, latency: {}ms", definedPath, latencyMs);
             }
         }
     
