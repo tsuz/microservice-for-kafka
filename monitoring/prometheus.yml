@@ -1,0 +1,10 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'kafka-streams'
+    static_configs:
+      - targets: ['kafka-streams-app:7777']
+        labels:
+          application: 'kafka-streams-app'
