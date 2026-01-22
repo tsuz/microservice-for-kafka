@@ -91,6 +91,25 @@ public class RestApiServer {
         }
     }
 
+    /**
+     * Add CORS headers to the HTTP response
+     */
+    private static void addCorsHeaders(HttpExchange exchange) {
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "*");
+        exchange.getResponseHeaders().set("Access-Control-Max-Age", "86400"); // 24 hours
+    }
+
+    /**
+     * Handle OPTIONS preflight request
+     */
+    private static void handleOptionsRequest(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        exchange.sendResponseHeaders(204, -1); // No content
+        exchange.close();
+    }
+
     private class AllPathsHandler implements HttpHandler {
         private final List<PathHandler> pathHandlers;
     
@@ -104,6 +123,12 @@ public class RestApiServer {
     
         @Override
         public void handle(HttpExchange exchange) throws IOException {
+            // Handle CORS preflight requests
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptionsRequest(exchange);
+                return;
+            }
+
             String path = exchange.getRequestURI().getPath();
             logger.info("Incoming path: {}", path);
     
@@ -121,6 +146,7 @@ public class RestApiServer {
         }
 
         private void sendResponse(HttpExchange exchange, String response, int statusCode) throws IOException {
+            addCorsHeaders(exchange);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(statusCode, responseBytes.length);
@@ -156,6 +182,12 @@ public class RestApiServer {
         }
     
         public void handle(HttpExchange exchange) throws IOException {
+            // Handle CORS preflight requests
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptionsRequest(exchange);
+                return;
+            }
+
             long startTime = System.nanoTime();
             String path = exchange.getRequestURI().getPath();
             
@@ -219,6 +251,7 @@ public class RestApiServer {
         }
 
         private void sendResponse(HttpExchange exchange, String response, int statusCode) throws IOException {
+            addCorsHeaders(exchange);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(statusCode, responseBytes.length);
