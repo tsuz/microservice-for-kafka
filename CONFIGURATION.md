@@ -124,9 +124,38 @@ if `mergeKey=false` then it will return
 
 Default: null
 
-This is required if serializer is avro.
+`keyField` is required if key serializer is avro.
 
 If key is an avro, then it requires a key field to look up the value. For example, if `keyField=productId` and the path is `/products/{id}`, then it looks up using key `{"productId": "{id}"}`. 
+
+#### keyFields
+
+Default: []
+
+The list of multiple key fields used for looking up avro keys.
+
+Either `keyField` or `keyFields` is required if key serializer is avro, and both cannot be set simultaneously for each path.
+
+
+```sh
+  /aggregation/5min/{productId}/{windowStart}:
+    parameters:
+    - name: productId
+      in: path
+      description: the product id
+    - name: windowStart
+      in: path
+      description: the start window of product purchase
+    get:
+      kafka:
+        topic: orders_5min_realtime
+        serializer:
+          key: avro
+          value: avro
+        keyFields:
+          product_id: ${parameters.productId}
+          bucket_start: ${parameters.windowStart}
+```
 
 
 #### includeType

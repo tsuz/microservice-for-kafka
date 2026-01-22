@@ -62,6 +62,7 @@ public class Configuration {
         private boolean mergeKey = false;
         private boolean includeType = false;
         private String keyField;
+        private Map<String, String> keyFields;
 
         public String getTopic() { return topic; }
         public void setTopic(String topic) { this.topic = topic; }
@@ -75,6 +76,15 @@ public class Configuration {
         public void setIncludeType(boolean includeType) { this.includeType = includeType; }
         public String getKeyField() { return keyField; }
         public void setKeyField(String keyField) { this.keyField = keyField; }
+        public Map<String, String> getKeyFields() { return keyFields; }
+        public void setKeyFields(Map<String, String> keyFields) { this.keyFields = keyFields; }
+        
+        /**
+         * Check if this config uses composite (multiple) key fields
+         */
+        public boolean hasCompositeKey() {
+            return keyFields != null && !keyFields.isEmpty();
+        }
     }
 
     public static class QueryConfig {
@@ -155,7 +165,7 @@ public class Configuration {
                     throw new IllegalArgumentException("Only GET methods are supported. Found: " + method + " for path: " + pathConfig.getPath());
                 }
 
-                validateKafkaInPath(path, methodConfig);
+                validateKafkaInPath(path, methodConfig, pathConfig);
                 validateResponses(pathConfig, methodConfig);
                 validateStateStoreQuery(pathConfig, methodConfig);
             }
@@ -267,7 +277,7 @@ public class Configuration {
         }
     }
 
-    private void validateKafkaInPath(String path, MethodConfig methodConfig) {
+    private void validateKafkaInPath(String path, MethodConfig methodConfig, PathConfig pathConfig) {
         KafkaConfig kafka = methodConfig.getKafka();
         if (kafka == null) {
             throw new IllegalArgumentException("`kafka` configuration is missing for path: " + path);
@@ -295,12 +305,44 @@ public class Configuration {
             throw new IllegalArgumentException("`kafka.serializer.key` must be set and is one of 'string' or 'avro' for path: " + path);
         }
         
-        // If key serializer is avro, keyField must be set
+        // If key serializer is avro, either keyField or keyFields must be set
         if ("avro".equalsIgnoreCase(keySerializer)) {
-            String keyField = kafka.getKeyField();
-            if (keyField == null || keyField.isEmpty()) {
+            boolean hasKeyField = kafka.getKeyField() != null && !kafka.getKeyField().isEmpty();
+            boolean hasKeyFields = kafka.getKeyFields() != null && !kafka.getKeyFields().isEmpty();
+            
+            if (!hasKeyField && !hasKeyFields) {
                 throw new IllegalArgumentException(
-                    "`kafka.keyField` must be set when `kafka.serializer.key` is 'avro' for path: " + path);
+                    "`kafka.keyField` or `kafka.keyFields` must be set when `kafka.serializer.key` is 'avro' for path: " + path);
+            }
+            
+            if (hasKeyField && hasKeyFields) {
+                throw new IllegalArgumentException(
+                    "Cannot specify both `kafka.keyField` and `kafka.keyFields`. Use one or the other for path: " + path);
+            }
+            
+            // Validate keyFields mappings reference valid path parameters
+            if (hasKeyFields) {
+                Set<String> definedParams = new HashSet<>();
+                if (pathConfig.getParameters() != null) {
+                    for (ParameterConfig param : pathConfig.getParameters()) {
+                        definedParams.add(param.getName());
+                    }
+                }
+                
+                for (Map.Entry<String, String> entry : kafka.getKeyFields().entrySet()) {
+                    String valueTemplate = entry.getValue();
+                    if (valueTemplate.contains("${parameters.")) {
+                        String paramName = valueTemplate.substring(
+                            valueTemplate.indexOf("${parameters.") + 13, 
+                            valueTemplate.indexOf("}")
+                        );
+                        if (!definedParams.contains(paramName)) {
+                            throw new IllegalArgumentException(
+                                "Parameter '" + paramName + "' used in keyFields mapping for key '" + 
+                                entry.getKey() + "' is not defined in path parameters for path: " + path);
+                        }
+                    }
+                }
             }
         }
     
@@ -371,9 +413,22 @@ public class Configuration {
             kafkaConfig.setIncludeType((Boolean) kafkaData.get("includeType"));
         }
         
-        // Parse keyField if present (required when key serializer is avro)
+        // Parse keyField if present (single key field - backward compatibility)
         if (kafkaData.containsKey("keyField")) {
             kafkaConfig.setKeyField((String) kafkaData.get("keyField"));
+        }
+        
+        // Parse keyFields if present (multiple key fields for composite keys)
+        if (kafkaData.containsKey("keyFields")) {
+            Object keyFieldsObj = kafkaData.get("keyFields");
+            if (keyFieldsObj instanceof Map) {
+                Map<String, String> keyFields = new LinkedHashMap<>();
+                Map<String, Object> keyFieldsMap = (Map<String, Object>) keyFieldsObj;
+                for (Map.Entry<String, Object> entry : keyFieldsMap.entrySet()) {
+                    keyFields.put(entry.getKey(), entry.getValue().toString());
+                }
+                kafkaConfig.setKeyFields(keyFields);
+            }
         }
         
         return kafkaConfig;
