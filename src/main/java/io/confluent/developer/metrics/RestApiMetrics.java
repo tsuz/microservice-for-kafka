@@ -26,6 +26,11 @@ public class RestApiMetrics implements DynamicMBean {
         try {
             MBeanServer mbs = ManagementFactory.getPlatformMBeanServer();
             ObjectName name = new ObjectName("io.confluent.developer:type=RestApiMetrics");
+            // Registration is idempotent: a prior server instance in this JVM (e.g. after a
+            // Kafka Streams restart) may have left the MBean registered. Replace it.
+            if (mbs.isRegistered(name)) {
+                mbs.unregisterMBean(name);
+            }
             mbs.registerMBean(this, name);
             logger.info("RestApiMetrics MBean registered successfully");
         } catch (Exception e) {
