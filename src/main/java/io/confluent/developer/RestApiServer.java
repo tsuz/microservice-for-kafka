@@ -295,8 +295,8 @@ public class RestApiServer {
                     } catch (org.apache.kafka.common.errors.SerializationException e) {
                         // Schema deserialization failed - this record is corrupted/incompatible
                         logger.warn("Skipping record due to deserialization error: {}", e.getMessage());
-                        // The iterator has moved past this record, continue to next
-                        break;
+                        // The iterator has already advanced past this record, so skip just this one
+                        continue;
                     } catch (Exception e) {
                         // Unexpected error - log and try to continue
                         logger.error("Unexpected error during iteration: {}", e.getMessage(), e);
@@ -337,7 +337,8 @@ public class RestApiServer {
                     } catch (org.apache.kafka.common.errors.SerializationException e) {
                         // Schema deserialization failed - this record is corrupted/incompatible
                         logger.warn("Skipping record due to deserialization error: {}", e.getMessage());
-                        break;
+                        // The iterator has already advanced past this record, so skip just this one
+                        continue;
                     } catch (Exception e) {
                         // Unexpected error - log and try to continue
                         logger.error("Unexpected error during range iteration: {}", e.getMessage(), e);
@@ -377,7 +378,8 @@ public class RestApiServer {
                     } catch (org.apache.kafka.common.errors.SerializationException e) {
                         // Schema deserialization failed - this record is corrupted/incompatible
                         logger.warn("Skipping record due to deserialization error: {}", e.getMessage());
-                        break;
+                        // The iterator has already advanced past this record, so skip just this one
+                        continue;
                     } catch (Exception e) {
                         // Unexpected error - log and try to continue
                         logger.error("Unexpected error during prefix iteration: {}", e.getMessage(), e);

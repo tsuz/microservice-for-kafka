@@ -46,7 +46,7 @@ public class RestApiServerRangeTest {
         }
     }
 
-    private Configuration rangeConfig(@TempDir Path tempDir) throws Exception {
+    private Configuration rangeConfig(Path tempDir) throws Exception {
         Path configPath = tempDir.resolve("range-config.yaml");
         Files.writeString(configPath,
             "kafka:\n" +
