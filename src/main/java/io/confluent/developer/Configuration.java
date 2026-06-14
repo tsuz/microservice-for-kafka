@@ -90,12 +90,18 @@ public class Configuration {
     public static class QueryConfig {
         private String method;
         private String key;
+        private String from;
+        private String to;
         private String prefix;
 
         public String getMethod() { return method; }
         public void setMethod(String method) { this.method = method; }
         public String getKey() { return key; }
         public void setKey(String key) { this.key = key; }
+        public String getFrom() { return from; }
+        public void setFrom(String from) { this.from = from; }
+        public String getTo() { return to; }
+        public void setTo(String to) { this.to = to; }
         public String getPrefix() { return prefix; }
         public void setPrefix(String prefix) { this.prefix = prefix; }
     }
@@ -231,6 +237,21 @@ public class Configuration {
             return;
         }
 
+        // The 'range' method scans a contiguous key range and needs `from`/`to` bounds instead of a single key
+        if ("range".equalsIgnoreCase(queryMethod)) {
+            String from = queryConfig.getFrom();
+            String to = queryConfig.getTo();
+            if (from == null || from.isEmpty()) {
+                throw new IllegalArgumentException("`kafka.query.from` is required when `kafka.query.method` is 'range' for path: " + pathConfig.getPath());
+            }
+            if (to == null || to.isEmpty()) {
+                throw new IllegalArgumentException("`kafka.query.to` is required when `kafka.query.method` is 'range' for path: " + pathConfig.getPath());
+            }
+            validateParameterReferences(pathConfig, from, "kafka.query.from");
+            validateParameterReferences(pathConfig, to, "kafka.query.to");
+            return;
+        }
+
         // The 'prefix' method scans all keys sharing a common prefix and needs a `prefix` template
         if ("prefix".equalsIgnoreCase(queryMethod)) {
             String prefix = queryConfig.getPrefix();
@@ -316,8 +337,9 @@ public class Configuration {
     
         // Check kafka.query.method
         String queryMethod = query.getMethod();
-        if (queryMethod == null || (!queryMethod.equals("get") && !queryMethod.equals("all") && !queryMethod.equals("prefix"))) {
-            throw new IllegalArgumentException("`kafka.query.method` must be one of 'get', 'all', or 'prefix' for path: " + path);
+        if (queryMethod == null || (!queryMethod.equals("get") && !queryMethod.equals("all")
+                && !queryMethod.equals("range") && !queryMethod.equals("prefix"))) {
+            throw new IllegalArgumentException("`kafka.query.method` must be one of 'get', 'all', 'range', or 'prefix' for path: " + path);
         }
 
         // Check kafka.serializer
@@ -328,11 +350,12 @@ public class Configuration {
             throw new IllegalArgumentException("`kafka.serializer.key` must be set and is one of 'string' or 'avro' for path: " + path);
         }
 
-        // Prefix scans rely on lexicographic ordering of the serialized key bytes. Avro's binary encoding
-        // (length-prefixed strings, zig-zag varint numbers) is not prefix-preserving, so prefix is string-only.
-        if ("prefix".equals(queryMethod) && !"string".equals(keySerializer)) {
+        // Range and prefix scans rely on lexicographic ordering of the serialized key bytes. Avro's binary
+        // encoding (length-prefixed strings, zig-zag varint numbers) is not order/prefix-preserving, so
+        // both are string-only.
+        if (("range".equals(queryMethod) || "prefix".equals(queryMethod)) && !"string".equals(keySerializer)) {
             throw new IllegalArgumentException(
-                "`kafka.serializer.key` must be 'string' when `kafka.query.method` is 'prefix' for path: " + path);
+                "`kafka.serializer.key` must be 'string' when `kafka.query.method` is '" + queryMethod + "' for path: " + path);
         }
 
         // If key serializer is avro, either keyField or keyFields must be set
@@ -469,6 +492,8 @@ public class Configuration {
         if (queryData != null) {
             queryConfig.setMethod((String) queryData.get("method"));
             queryConfig.setKey((String) queryData.get("key"));
+            queryConfig.setFrom((String) queryData.get("from"));
+            queryConfig.setTo((String) queryData.get("to"));
             queryConfig.setPrefix((String) queryData.get("prefix"));
         }
         return queryConfig;

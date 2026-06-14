@@ -213,6 +213,11 @@ public class RestApiServer {
                     } else if ("get".equals(queryMethod)) {
                         response = getValue(pathParams, methodConfig);
                         statusCode = (response != null) ? 200 : 404;
+                    } else if ("range".equals(queryMethod)) {
+                        String from = resolveQueryKey(methodConfig.getKafka().getQuery().getFrom(), pathParams);
+                        String to = resolveQueryKey(methodConfig.getKafka().getQuery().getTo(), pathParams);
+                        response = getRangeValues(from, to, methodConfig);
+                        statusCode = 200;
                     } else if ("prefix".equals(queryMethod)) {
                         String prefix = resolveQueryKey(methodConfig.getKafka().getQuery().getPrefix(), pathParams);
                         response = getPrefixValues(prefix, methodConfig);
@@ -290,8 +295,8 @@ public class RestApiServer {
                     } catch (org.apache.kafka.common.errors.SerializationException e) {
                         // Schema deserialization failed - this record is corrupted/incompatible
                         logger.warn("Skipping record due to deserialization error: {}", e.getMessage());
-                        // The iterator has moved past this record, continue to next
-                        break;
+                        // The iterator has already advanced past this record, so skip just this one
+                        continue;
                     } catch (Exception e) {
                         // Unexpected error - log and try to continue
                         logger.error("Unexpected error during iteration: {}", e.getMessage(), e);
@@ -303,6 +308,47 @@ public class RestApiServer {
             
             String result = objectMapper.writeValueAsString(jsonArray);
             return result;
+        }
+
+        private String getRangeValues(String fromKey, String toKey, Configuration.MethodConfig methodConfig) throws IOException {
+            String storeName = methodConfig.getKafka().getTopic() + "-store";
+
+            ReadOnlyKeyValueStore<Object, Object> keyValueStore =
+                    streams.store(StoreQueryParameters.fromNameAndType(storeName, QueryableStoreTypes.keyValueStore()));
+
+            logger.debug("Range scan on store '{}' from '{}' to '{}'", storeName, fromKey, toKey);
+
+            ArrayNode jsonArray = objectMapper.createArrayNode();
+
+            // range() is inclusive of both bounds and returns entries ordered by the serialized key bytes.
+            try (var iterator = keyValueStore.range(fromKey, toKey)) {
+
+                while (iterator.hasNext()) {
+                    try {
+                        var entry = iterator.next();
+
+                        try {
+                            JsonNode item = processValue(entry, methodConfig);
+                            jsonArray.add(item);
+                        } catch (IOException e) {
+                            logger.warn("Skipping entry IOException - {}", e.getMessage());
+                        }
+
+                    } catch (org.apache.kafka.common.errors.SerializationException e) {
+                        // Schema deserialization failed - this record is corrupted/incompatible
+                        logger.warn("Skipping record due to deserialization error: {}", e.getMessage());
+                        // The iterator has already advanced past this record, so skip just this one
+                        continue;
+                    } catch (Exception e) {
+                        // Unexpected error - log and try to continue
+                        logger.error("Unexpected error during range iteration: {}", e.getMessage(), e);
+                    }
+                }
+            } catch (Exception e) {
+                logger.error("Fatal exception during range iteration: {}", e.getMessage(), e);
+            }
+
+            return objectMapper.writeValueAsString(jsonArray);
         }
 
         private String getPrefixValues(String prefix, Configuration.MethodConfig methodConfig) throws IOException {
@@ -332,7 +378,8 @@ public class RestApiServer {
                     } catch (org.apache.kafka.common.errors.SerializationException e) {
                         // Schema deserialization failed - this record is corrupted/incompatible
                         logger.warn("Skipping record due to deserialization error: {}", e.getMessage());
-                        break;
+                        // The iterator has already advanced past this record, so skip just this one
+                        continue;
                     } catch (Exception e) {
                         // Unexpected error - log and try to continue
                         logger.error("Unexpected error during prefix iteration: {}", e.getMessage(), e);

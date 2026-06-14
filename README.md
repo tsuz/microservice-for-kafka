@@ -169,6 +169,71 @@ A prefix with no matches returns `[]`.
 For a complete, runnable walkthrough — listing conversations, fetching one, and replaying its
 messages from a single topic — see [`examples/conversation-store`](examples/conversation-store).
 
+## Get a range of items
+
+The `range` query method returns every entry whose key falls within an inclusive `[from, to]`
+window, ordered by the key. It is ideal for paginating or windowing append-log data — for example,
+fetching a slice of a conversation transcript stored under keys like `message:<conversationId>:<offset>`.
+
+> **Keys must be `string`.** Like `prefix`, range scans rely on the lexicographic ordering of the
+> serialized key bytes; Avro keys are rejected. Pad numeric components to a fixed width
+> (e.g. `0000000010`) so they sort numerically.
+
+**Config**
+
+```yaml
+kafka:
+  application.id: kafka-streams-101
+  bootstrap.servers: localhost:9092
+
+paths:
+  /conversations/{conversationId}/messages/{from}/{to}:
+    parameters:
+    - name: conversationId
+      in: path
+      description: the conversation identifier
+    - name: from
+      in: path
+      description: start offset (zero-padded, inclusive)
+    - name: to
+      in: path
+      description: end offset (zero-padded, inclusive)
+    get:
+      kafka:
+        topic: conversation-store
+        query:
+          method: range
+          # Quote values that contain ':' (a YAML mapping indicator)
+          from: "message:${parameters.conversationId}:${parameters.from}"
+          to: "message:${parameters.conversationId}:${parameters.to}"
+        serializer:
+          key: string
+          value: string
+      responses:
+        '200':
+          description: A range of messages
+          content:
+            application/json:
+              schema:
+                type: array
+```
+
+**Query**
+
+```sh
+curl "localhost:7001/conversations/conv1/messages/0000000001/0000000002" | jq
+
+[
+  { "role": "user", "text": "hello" },
+  { "role": "assistant", "text": "how are you?" }
+]
+```
+
+Both bounds are inclusive. An empty window returns `[]`.
+
+For a complete, runnable walkthrough of windowing a conversation's messages, see
+[`examples/conversation-store-range`](examples/conversation-store-range).
+
 # Performance Benchmarks
 
 We ran some load tests to see how the system performs with real-world data volumes and access patterns.
@@ -203,6 +268,7 @@ Also, the results will vary based on hardware, query method, and disk type.
 | List all items | ✅
 | Get single item | ✅
 | Get items by key prefix | ✅
+| Get range of items | ✅
 
 
 **Data Type (Key)**
