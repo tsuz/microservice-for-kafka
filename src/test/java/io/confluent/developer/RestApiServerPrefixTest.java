@@ -30,7 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * Exercises the `prefix` query method end-to-end: an HTTP request hits the running
  * {@link RestApiServer}, which performs a prefix scan against a mocked Kafka Streams store backed by
- * a TreeMap (whose String key ordering mirrors the real RocksDB store's lexicographic byte ordering).
+ * a TreeMap (whose natural ordering matches the UTF-8 byte ordering for the ASCII keys used here).
  */
 public class RestApiServerPrefixTest {
 
