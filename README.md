@@ -231,6 +231,9 @@ curl "localhost:7001/conversations/conv1/messages/0000000001/0000000002" | jq
 
 Both bounds are inclusive. An empty window returns `[]`.
 
+For a complete, runnable walkthrough of windowing a conversation's messages, see
+[`examples/conversation-store-range`](examples/conversation-store-range).
+
 # Performance Benchmarks
 
 We ran some load tests to see how the system performs with real-world data volumes and access patterns.
