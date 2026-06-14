@@ -166,6 +166,9 @@ curl "localhost:7001/conversations/conv1/messages" | jq
 
 A prefix with no matches returns `[]`.
 
+For a complete, runnable walkthrough — listing conversations, fetching one, and replaying its
+messages from a single topic — see [`examples/conversation-store`](examples/conversation-store).
+
 # Performance Benchmarks
 
 We ran some load tests to see how the system performs with real-world data volumes and access patterns.
