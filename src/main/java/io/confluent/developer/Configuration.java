@@ -92,6 +92,7 @@ public class Configuration {
         private String key;
         private String from;
         private String to;
+        private String prefix;
 
         public String getMethod() { return method; }
         public void setMethod(String method) { this.method = method; }
@@ -101,6 +102,8 @@ public class Configuration {
         public void setFrom(String from) { this.from = from; }
         public String getTo() { return to; }
         public void setTo(String to) { this.to = to; }
+        public String getPrefix() { return prefix; }
+        public void setPrefix(String prefix) { this.prefix = prefix; }
     }
 
     public static class SerializerConfig {
@@ -249,6 +252,16 @@ public class Configuration {
             return;
         }
 
+        // The 'prefix' method scans all keys sharing a common prefix and needs a `prefix` template
+        if ("prefix".equalsIgnoreCase(queryMethod)) {
+            String prefix = queryConfig.getPrefix();
+            if (prefix == null || prefix.isEmpty()) {
+                throw new IllegalArgumentException("`kafka.query.prefix` is required when `kafka.query.method` is 'prefix' for path: " + pathConfig.getPath());
+            }
+            validateParameterReferences(pathConfig, prefix, "kafka.query.prefix");
+            return;
+        }
+
         String queryKey = queryConfig.getKey();
 
         if (queryKey == null) {
@@ -324,8 +337,9 @@ public class Configuration {
     
         // Check kafka.query.method
         String queryMethod = query.getMethod();
-        if (queryMethod == null || (!queryMethod.equals("get") && !queryMethod.equals("all") && !queryMethod.equals("range"))) {
-            throw new IllegalArgumentException("`kafka.query.method` must be one of 'get', 'all', or 'range' for path: " + path);
+        if (queryMethod == null || (!queryMethod.equals("get") && !queryMethod.equals("all")
+                && !queryMethod.equals("range") && !queryMethod.equals("prefix"))) {
+            throw new IllegalArgumentException("`kafka.query.method` must be one of 'get', 'all', 'range', or 'prefix' for path: " + path);
         }
 
         // Check kafka.serializer
@@ -336,11 +350,12 @@ public class Configuration {
             throw new IllegalArgumentException("`kafka.serializer.key` must be set and is one of 'string' or 'avro' for path: " + path);
         }
 
-        // Range scans rely on lexicographic ordering of the serialized key bytes. Avro's binary encoding
-        // (length-prefixed strings, zig-zag varint numbers) is not order-preserving, so range is string-only.
-        if ("range".equals(queryMethod) && !"string".equals(keySerializer)) {
+        // Range and prefix scans rely on lexicographic ordering of the serialized key bytes. Avro's binary
+        // encoding (length-prefixed strings, zig-zag varint numbers) is not order/prefix-preserving, so
+        // both are string-only.
+        if (("range".equals(queryMethod) || "prefix".equals(queryMethod)) && !"string".equals(keySerializer)) {
             throw new IllegalArgumentException(
-                "`kafka.serializer.key` must be 'string' when `kafka.query.method` is 'range' for path: " + path);
+                "`kafka.serializer.key` must be 'string' when `kafka.query.method` is '" + queryMethod + "' for path: " + path);
         }
 
         // If key serializer is avro, either keyField or keyFields must be set
@@ -479,6 +494,7 @@ public class Configuration {
             queryConfig.setKey((String) queryData.get("key"));
             queryConfig.setFrom((String) queryData.get("from"));
             queryConfig.setTo((String) queryData.get("to"));
+            queryConfig.setPrefix((String) queryData.get("prefix"));
         }
         return queryConfig;
     }

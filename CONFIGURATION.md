@@ -98,15 +98,18 @@ Defines how data is retrieved from the state store. `query.method` is one of:
 |--|--|--|
 | `all` | every entry in the store | — |
 | `get` | a single entry by key | `key` |
+| `prefix` | every entry whose key starts with a prefix, ordered by key | `prefix` |
 | `range` | every entry within an inclusive `[from, to]` key window, ordered by key | `from`, `to` |
 
-`key`, `from`, and `to` are templates that may embed path parameters with `${parameters.<name>}`,
-for example `message:${parameters.conversationId}:${parameters.offset}`.
+`key`, `prefix`, `from`, and `to` are templates that may embed path parameters with
+`${parameters.<name>}`, for example `message:${parameters.conversationId}:`. Quote the value in YAML
+if it contains a `:` (e.g. `prefix: "message:${parameters.conversationId}:"`), since `:` is a YAML
+mapping indicator.
 
-`range` requires `serializer.key: string`. Range scans depend on the lexicographic ordering of the
-serialized key bytes, and Avro's binary encoding is not order-preserving, so Avro keys are rejected
-for `range`. Pad numeric key components to a fixed width (e.g. `0000000010`) so they sort numerically
-rather than lexicographically.
+`prefix` and `range` require `serializer.key: string`. Both depend on the lexicographic ordering of
+the serialized key bytes, and Avro's binary encoding is not order/prefix-preserving, so Avro keys are
+rejected for them. Pad numeric key components to a fixed width (e.g. `0000000010`) so they sort
+numerically rather than lexicographically.
 
 #### mergeKey
 

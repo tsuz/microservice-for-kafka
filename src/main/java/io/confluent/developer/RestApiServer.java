@@ -15,6 +15,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 import org.apache.avro.generic.GenericRecord;
+import org.apache.kafka.common.serialization.StringSerializer;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.StoreQueryParameters;
@@ -217,6 +218,10 @@ public class RestApiServer {
                         String to = resolveQueryKey(methodConfig.getKafka().getQuery().getTo(), pathParams);
                         response = getRangeValues(from, to, methodConfig);
                         statusCode = 200;
+                    } else if ("prefix".equals(queryMethod)) {
+                        String prefix = resolveQueryKey(methodConfig.getKafka().getQuery().getPrefix(), pathParams);
+                        response = getPrefixValues(prefix, methodConfig);
+                        statusCode = 200;
                     } else {
                         response = "Unsupported query method";
                         statusCode = 400;
@@ -340,6 +345,46 @@ public class RestApiServer {
                 }
             } catch (Exception e) {
                 logger.error("Fatal exception during range iteration: {}", e.getMessage(), e);
+            }
+
+            return objectMapper.writeValueAsString(jsonArray);
+        }
+
+        private String getPrefixValues(String prefix, Configuration.MethodConfig methodConfig) throws IOException {
+            String storeName = methodConfig.getKafka().getTopic() + "-store";
+
+            ReadOnlyKeyValueStore<Object, Object> keyValueStore =
+                    streams.store(StoreQueryParameters.fromNameAndType(storeName, QueryableStoreTypes.keyValueStore()));
+
+            logger.debug("Prefix scan on store '{}' with prefix '{}'", storeName, prefix);
+
+            ArrayNode jsonArray = objectMapper.createArrayNode();
+
+            // prefixScan returns every entry whose key starts with the prefix, ordered by the serialized key bytes.
+            try (var iterator = keyValueStore.prefixScan(prefix, new StringSerializer())) {
+
+                while (iterator.hasNext()) {
+                    try {
+                        var entry = iterator.next();
+
+                        try {
+                            JsonNode item = processValue(entry, methodConfig);
+                            jsonArray.add(item);
+                        } catch (IOException e) {
+                            logger.warn("Skipping entry IOException - {}", e.getMessage());
+                        }
+
+                    } catch (org.apache.kafka.common.errors.SerializationException e) {
+                        // Schema deserialization failed - this record is corrupted/incompatible
+                        logger.warn("Skipping record due to deserialization error: {}", e.getMessage());
+                        break;
+                    } catch (Exception e) {
+                        // Unexpected error - log and try to continue
+                        logger.error("Unexpected error during prefix iteration: {}", e.getMessage(), e);
+                    }
+                }
+            } catch (Exception e) {
+                logger.error("Fatal exception during prefix iteration: {}", e.getMessage(), e);
             }
 
             return objectMapper.writeValueAsString(jsonArray);

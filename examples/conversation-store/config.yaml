@@ -1,0 +1,91 @@
+---
+# Conversation store example.
+#
+# A single compacted topic holds two kinds of records, distinguished by key prefix:
+#   conversation:<id>            -> conversation metadata  {"name": ..., "state": ...}
+#   message:<id>:<paddedOffset>  -> a message in that conversation  {"role": ..., "text": ...}
+#
+# This demonstrates the three lookups the `prefix` (and `get`) query methods enable, without ever
+# storing a list of ids in a single record:
+#   1. GET /conversations                       -> list all conversations   (prefix "conversation:")
+#   2. GET /conversations/{id}                   -> one conversation's metadata (get)
+#   3. GET /conversations/{id}/messages          -> that conversation's messages (prefix "message:<id>:")
+#
+# Offsets are zero-padded to a fixed width so they sort numerically (RocksDB orders keys by their
+# serialized bytes; without padding "10" would sort before "2"). Keys must be `string` for prefix
+# scans — Avro's binary encoding is not prefix-preserving.
+
+kafka:
+  application.id: conversation-store-example
+  bootstrap.servers: localhost:9092
+  # Required to construct the client even when keys/values are strings (no schema lookups occur).
+  schema.registry.url: http://localhost:8081
+
+paths:
+  # 1. List all conversations
+  /conversations:
+    get:
+      description: List all conversations
+      kafka:
+        topic: conversation-store
+        query:
+          method: prefix
+          prefix: "conversation:"
+        serializer:
+          key: string
+          value: string
+      responses:
+        '200':
+          description: All conversations
+          content:
+            application/json:
+              schema:
+                type: array
+
+  # 2. One conversation's metadata
+  /conversations/{conversationId}:
+    parameters:
+    - name: conversationId
+      in: path
+      description: the conversation identifier
+    get:
+      description: Get one conversation's metadata
+      kafka:
+        topic: conversation-store
+        query:
+          method: get
+          key: "conversation:${parameters.conversationId}"
+        serializer:
+          key: string
+          value: string
+      responses:
+        '200':
+          description: A single conversation
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # 3. A conversation's messages, in order
+  /conversations/{conversationId}/messages:
+    parameters:
+    - name: conversationId
+      in: path
+      description: the conversation identifier
+    get:
+      description: List all messages in a conversation
+      kafka:
+        topic: conversation-store
+        query:
+          method: prefix
+          prefix: "message:${parameters.conversationId}:"
+        serializer:
+          key: string
+          value: string
+      responses:
+        '200':
+          description: All messages for a conversation
+          content:
+            application/json:
+              schema:
+                type: array
