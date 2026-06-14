@@ -233,9 +233,7 @@ is returned as:
 }
 ```
 
-String keys are emitted as-is; structured (Avro) keys are serialized to their JSON form. If the value
-is not a JSON object (e.g. an array or scalar) the key cannot be attached and the value is returned
-unchanged.
+String keys are emitted as-is; structured (Avro) keys are serialized to their JSON form. If the value is not a JSON object (e.g. an array or scalar) the key cannot be attached and the value is returned unchanged. If the value already contains a `key` field, `includeKey` is skipped to avoid overwriting payload data.
 
 This differs from [`mergeKey`](#mergekey): `mergeKey` merges the fields of an Avro **key object** into
 the value, whereas `includeKey` adds the raw key itself under `key` and works for plain string keys.
