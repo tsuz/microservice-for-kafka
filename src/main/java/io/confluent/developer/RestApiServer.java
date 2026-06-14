@@ -421,6 +421,12 @@ public class RestApiServer {
                 return valueNode;
             }
 
+            // Don't clobber a "key" field that's already part of the payload.
+            if (valueNode.has("key")) {
+                logger.warn("includeKey skipped - value already has a 'key' field");
+                return valueNode;
+            }
+
             com.fasterxml.jackson.databind.node.ObjectNode result = (com.fasterxml.jackson.databind.node.ObjectNode) valueNode;
 
             // String keys are emitted as-is; structured (e.g. Avro) keys are serialized to their JSON form.

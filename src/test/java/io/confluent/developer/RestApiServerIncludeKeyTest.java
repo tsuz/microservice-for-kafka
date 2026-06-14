@@ -278,6 +278,24 @@ public class RestApiServerIncludeKeyTest {
         assertEquals("message:conv1:0000000002", body.get(1).get("key").asText());
     }
 
+    @Test
+    public void testIncludeKeyDoesNotClobberExistingKeyField(@TempDir Path tempDir) throws Exception {
+        FakeKeyValueStore store = new FakeKeyValueStore();
+        // Value already carries its own "key" field that must be preserved.
+        store.put("k1", "{\"key\":\"payload-key\",\"text\":\"hi\"}");
+
+        startServer(config(tempDir, "all-includekey-clobber.yaml", ALL_INCLUDE_KEY), store);
+
+        HttpResponse<String> response = get("/items");
+        assertEquals(200, response.statusCode());
+
+        JsonNode body = MAPPER.readTree(response.body());
+        assertEquals(1, body.size());
+        // The payload's own "key" wins; the store key does not overwrite it.
+        assertEquals("payload-key", body.get(0).get("key").asText());
+        assertEquals("hi", body.get(0).get("text").asText());
+    }
+
     static class FakeKeyValueStore implements ReadOnlyKeyValueStore<Object, Object> {
         private final TreeMap<String, String> data = new TreeMap<>();
 
