@@ -88,6 +88,27 @@ kafka:
   keyField: productId
 ```
 
+#### query
+
+Default: Object (required)
+
+Defines how data is retrieved from the state store. `query.method` is one of:
+
+| Method | Returns | Required fields |
+|--|--|--|
+| `all` | every entry in the store | — |
+| `get` | a single entry by key | `key` |
+| `prefix` | every entry whose key starts with a prefix, ordered by key | `prefix` |
+
+`key` and `prefix` are templates that may embed path parameters with `${parameters.<name>}`,
+for example `message:${parameters.conversationId}:`. Quote the value in YAML if it contains a `:`
+(e.g. `prefix: "message:${parameters.conversationId}:"`), since `:` is a YAML mapping indicator.
+
+`prefix` requires `serializer.key: string`. Prefix scans depend on the lexicographic ordering of the
+serialized key bytes, and Avro's binary encoding is not prefix-preserving, so Avro keys are rejected
+for `prefix`. Pad numeric key components to a fixed width (e.g. `0000000010`) so they sort numerically
+rather than lexicographically.
+
 #### mergeKey
 
 Default: false
