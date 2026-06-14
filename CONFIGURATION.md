@@ -88,6 +88,26 @@ kafka:
   keyField: productId
 ```
 
+#### query
+
+Default: Object (required)
+
+Defines how data is retrieved from the state store. `query.method` is one of:
+
+| Method | Returns | Required fields |
+|--|--|--|
+| `all` | every entry in the store | — |
+| `get` | a single entry by key | `key` |
+| `range` | every entry within an inclusive `[from, to]` key window, ordered by key | `from`, `to` |
+
+`key`, `from`, and `to` are templates that may embed path parameters with `${parameters.<name>}`,
+for example `message:${parameters.conversationId}:${parameters.offset}`.
+
+`range` requires `serializer.key: string`. Range scans depend on the lexicographic ordering of the
+serialized key bytes, and Avro's binary encoding is not order-preserving, so Avro keys are rejected
+for `range`. Pad numeric key components to a fixed width (e.g. `0000000010`) so they sort numerically
+rather than lexicographically.
+
 #### mergeKey
 
 Default: false
