@@ -366,7 +366,7 @@ public class ConfigurationTest {
         Exception exception = assertThrows(IllegalArgumentException.class, () -> {
             Configuration.fromFile(configPath.toString());
         });
-        assertTrue(exception.getMessage().contains("`kafka.query.method` must be either 'get' or 'all' for path: /flights/{flightId}"));
+        assertTrue(exception.getMessage().contains("`kafka.query.method` must be one of 'get', 'all', 'range', or 'prefix' for path: /flights/{flightId}"));
     }
 
     @Test
@@ -711,6 +711,365 @@ public class ConfigurationTest {
         });
 
         assertTrue(exception.getMessage().contains("Only object or array schema types are supported. Found: string for path: /flights"));
+    }
+
+    @Test
+    public void testValidPrefixConfiguration(@TempDir Path tempDir) throws Exception {
+        Path configPath = tempDir.resolve("valid-prefix-config.yaml");
+        Files.writeString(configPath,
+            "kafka:\n" +
+            "  application.id: kafka-streams-101\n" +
+            "  bootstrap.servers: localhost:9092\n" +
+            "\n" +
+            "paths:\n" +
+            "  /conversations/{conversationId}/messages:\n" +
+            "    parameters:\n" +
+            "    - name: conversationId\n" +
+            "      in: path\n" +
+            "      description: the conversation identifier\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: conversation-messages\n" +
+            "        query:\n" +
+            "          method: prefix\n" +
+            "          prefix: \"message:${parameters.conversationId}:\"\n" +
+            "        serializer:\n" +
+            "          key: string\n" +
+            "          value: string\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: All messages for a conversation\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n"
+        );
+
+        Configuration config = Configuration.fromFile(configPath.toString());
+        assertNotNull(config);
+        Configuration.MethodConfig method =
+            config.getPaths().get("/conversations/{conversationId}/messages").getMethods().get("get");
+        assertEquals("prefix", method.getKafka().getQuery().getMethod());
+        assertEquals("message:${parameters.conversationId}:", method.getKafka().getQuery().getPrefix());
+    }
+
+    @Test
+    public void testPrefixMissingPrefix(@TempDir Path tempDir) throws Exception {
+        Path configPath = tempDir.resolve("prefix-missing.yaml");
+        Files.writeString(configPath,
+            "kafka:\n" +
+            "  application.id: kafka-streams-101\n" +
+            "  bootstrap.servers: localhost:9092\n" +
+            "\n" +
+            "paths:\n" +
+            "  /conversations:\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: conversation-messages\n" +
+            "        query:\n" +
+            "          method: prefix\n" +
+            "        serializer:\n" +
+            "          key: string\n" +
+            "          value: string\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: All conversations\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n"
+        );
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            Configuration.fromFile(configPath.toString());
+        });
+        assertTrue(exception.getMessage().contains("`kafka.query.prefix` is required when `kafka.query.method` is 'prefix' for path: /conversations"));
+    }
+
+    @Test
+    public void testPrefixUndefinedParameterReference(@TempDir Path tempDir) throws Exception {
+        Path configPath = tempDir.resolve("prefix-bad-param.yaml");
+        Files.writeString(configPath,
+            "kafka:\n" +
+            "  application.id: kafka-streams-101\n" +
+            "  bootstrap.servers: localhost:9092\n" +
+            "\n" +
+            "paths:\n" +
+            "  /conversations/{conversationId}/messages:\n" +
+            "    parameters:\n" +
+            "    - name: conversationId\n" +
+            "      in: path\n" +
+            "      description: the conversation identifier\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: conversation-messages\n" +
+            "        query:\n" +
+            "          method: prefix\n" +
+            "          prefix: \"message:${parameters.missing}:\"\n" +
+            "        serializer:\n" +
+            "          key: string\n" +
+            "          value: string\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: All messages for a conversation\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n"
+        );
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            Configuration.fromFile(configPath.toString());
+        });
+        assertTrue(exception.getMessage().contains("Parameter missing used in `kafka.query.prefix` is not defined in path parameters for path: /conversations/{conversationId}/messages"));
+    }
+
+    @Test
+    public void testPrefixRejectsAvroKey(@TempDir Path tempDir) throws Exception {
+        Path configPath = tempDir.resolve("prefix-avro-key.yaml");
+        Files.writeString(configPath,
+            "kafka:\n" +
+            "  application.id: kafka-streams-101\n" +
+            "  bootstrap.servers: localhost:9092\n" +
+            "\n" +
+            "paths:\n" +
+            "  /conversations/{conversationId}/messages:\n" +
+            "    parameters:\n" +
+            "    - name: conversationId\n" +
+            "      in: path\n" +
+            "      description: the conversation identifier\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: conversation-messages\n" +
+            "        keyField: id\n" +
+            "        query:\n" +
+            "          method: prefix\n" +
+            "          prefix: ${parameters.conversationId}\n" +
+            "        serializer:\n" +
+            "          key: avro\n" +
+            "          value: string\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: All messages for a conversation\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n"
+        );
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            Configuration.fromFile(configPath.toString());
+        });
+        assertTrue(exception.getMessage().contains("`kafka.serializer.key` must be 'string' when `kafka.query.method` is 'prefix' for path: /conversations/{conversationId}/messages"));
+    }
+
+    @Test
+    public void testValidRangeConfiguration(@TempDir Path tempDir) throws Exception {
+        Path configPath = tempDir.resolve("valid-range-config.yaml");
+        Files.writeString(configPath,
+            "kafka:\n" +
+            "  application.id: kafka-streams-101\n" +
+            "  bootstrap.servers: localhost:9092\n" +
+            "\n" +
+            "paths:\n" +
+            "  /conversations/{conversationId}/messages/{from}/{to}:\n" +
+            "    parameters:\n" +
+            "    - name: conversationId\n" +
+            "      in: path\n" +
+            "      description: the conversation identifier\n" +
+            "    - name: from\n" +
+            "      in: path\n" +
+            "      description: start offset (padded)\n" +
+            "    - name: to\n" +
+            "      in: path\n" +
+            "      description: end offset (padded)\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: conversation-messages\n" +
+            "        query:\n" +
+            "          method: range\n" +
+            "          from: message:${parameters.conversationId}:${parameters.from}\n" +
+            "          to: message:${parameters.conversationId}:${parameters.to}\n" +
+            "        serializer:\n" +
+            "          key: string\n" +
+            "          value: string\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: A range of messages\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n"
+        );
+
+        Configuration config = Configuration.fromFile(configPath.toString());
+        assertNotNull(config);
+        Configuration.MethodConfig method =
+            config.getPaths().get("/conversations/{conversationId}/messages/{from}/{to}").getMethods().get("get");
+        assertEquals("range", method.getKafka().getQuery().getMethod());
+        assertEquals("message:${parameters.conversationId}:${parameters.from}", method.getKafka().getQuery().getFrom());
+        assertEquals("message:${parameters.conversationId}:${parameters.to}", method.getKafka().getQuery().getTo());
+    }
+
+    @Test
+    public void testRangeMissingFrom(@TempDir Path tempDir) throws Exception {
+        Path configPath = tempDir.resolve("range-missing-from.yaml");
+        Files.writeString(configPath,
+            "kafka:\n" +
+            "  application.id: kafka-streams-101\n" +
+            "  bootstrap.servers: localhost:9092\n" +
+            "\n" +
+            "paths:\n" +
+            "  /messages/{to}:\n" +
+            "    parameters:\n" +
+            "    - name: to\n" +
+            "      in: path\n" +
+            "      description: end offset\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: conversation-messages\n" +
+            "        query:\n" +
+            "          method: range\n" +
+            "          to: message:${parameters.to}\n" +
+            "        serializer:\n" +
+            "          key: string\n" +
+            "          value: string\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: A range of messages\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n"
+        );
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            Configuration.fromFile(configPath.toString());
+        });
+        assertTrue(exception.getMessage().contains("`kafka.query.from` is required when `kafka.query.method` is 'range' for path: /messages/{to}"));
+    }
+
+    @Test
+    public void testRangeMissingTo(@TempDir Path tempDir) throws Exception {
+        Path configPath = tempDir.resolve("range-missing-to.yaml");
+        Files.writeString(configPath,
+            "kafka:\n" +
+            "  application.id: kafka-streams-101\n" +
+            "  bootstrap.servers: localhost:9092\n" +
+            "\n" +
+            "paths:\n" +
+            "  /messages/{from}:\n" +
+            "    parameters:\n" +
+            "    - name: from\n" +
+            "      in: path\n" +
+            "      description: start offset\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: conversation-messages\n" +
+            "        query:\n" +
+            "          method: range\n" +
+            "          from: message:${parameters.from}\n" +
+            "        serializer:\n" +
+            "          key: string\n" +
+            "          value: string\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: A range of messages\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n"
+        );
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            Configuration.fromFile(configPath.toString());
+        });
+        assertTrue(exception.getMessage().contains("`kafka.query.to` is required when `kafka.query.method` is 'range' for path: /messages/{from}"));
+    }
+
+    @Test
+    public void testRangeUndefinedParameterReference(@TempDir Path tempDir) throws Exception {
+        Path configPath = tempDir.resolve("range-bad-param.yaml");
+        Files.writeString(configPath,
+            "kafka:\n" +
+            "  application.id: kafka-streams-101\n" +
+            "  bootstrap.servers: localhost:9092\n" +
+            "\n" +
+            "paths:\n" +
+            "  /messages/{from}/{to}:\n" +
+            "    parameters:\n" +
+            "    - name: from\n" +
+            "      in: path\n" +
+            "      description: start offset\n" +
+            "    - name: to\n" +
+            "      in: path\n" +
+            "      description: end offset\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: conversation-messages\n" +
+            "        query:\n" +
+            "          method: range\n" +
+            "          from: message:${parameters.from}\n" +
+            "          to: message:${parameters.missing}\n" +
+            "        serializer:\n" +
+            "          key: string\n" +
+            "          value: string\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: A range of messages\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n"
+        );
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            Configuration.fromFile(configPath.toString());
+        });
+        assertTrue(exception.getMessage().contains("Parameter missing used in `kafka.query.to` is not defined in path parameters for path: /messages/{from}/{to}"));
+    }
+
+    @Test
+    public void testRangeRejectsAvroKey(@TempDir Path tempDir) throws Exception {
+        Path configPath = tempDir.resolve("range-avro-key.yaml");
+        Files.writeString(configPath,
+            "kafka:\n" +
+            "  application.id: kafka-streams-101\n" +
+            "  bootstrap.servers: localhost:9092\n" +
+            "\n" +
+            "paths:\n" +
+            "  /messages/{from}/{to}:\n" +
+            "    parameters:\n" +
+            "    - name: from\n" +
+            "      in: path\n" +
+            "      description: start offset\n" +
+            "    - name: to\n" +
+            "      in: path\n" +
+            "      description: end offset\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: conversation-messages\n" +
+            "        keyField: id\n" +
+            "        query:\n" +
+            "          method: range\n" +
+            "          from: ${parameters.from}\n" +
+            "          to: ${parameters.to}\n" +
+            "        serializer:\n" +
+            "          key: avro\n" +
+            "          value: string\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: A range of messages\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n"
+        );
+
+        Exception exception = assertThrows(IllegalArgumentException.class, () -> {
+            Configuration.fromFile(configPath.toString());
+        });
+        assertTrue(exception.getMessage().contains("`kafka.serializer.key` must be 'string' when `kafka.query.method` is 'range' for path: /messages/{from}/{to}"));
     }
 
     @Test

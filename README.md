@@ -101,6 +101,139 @@ paths:
 
 
 
+## Get items by key prefix
+
+The `prefix` query method returns every entry whose key starts with a given prefix, ordered by the
+key. It is ideal for listing a logical group without storing the group membership in a single record
+— for example, every message in a conversation (`message:<conversationId>:<offset>`), or every
+conversation in the system (`conversation:`).
+
+> **Keys must be `string`.** Prefix scans rely on the lexicographic ordering of the serialized key
+> bytes. Avro keys are rejected for `prefix` because Avro's binary encoding (length-prefixed strings,
+> zig-zag varint numbers) is not prefix-preserving. Pad numeric components to a fixed width
+> (e.g. `0000000010`) so they sort numerically.
+
+**Config**
+
+```yaml
+kafka:
+  application.id: kafka-streams-101
+  bootstrap.servers: localhost:9092
+
+paths:
+  /conversations/{conversationId}/messages:
+    parameters:
+    - name: conversationId
+      in: path
+      description: the conversation identifier
+    get:
+      kafka:
+        topic: conversation-messages
+        query:
+          method: prefix
+          # Quote the value because it contains ':' (a YAML mapping indicator)
+          prefix: "message:${parameters.conversationId}:"
+        serializer:
+          key: string
+          value: string
+      responses:
+        '200':
+          description: All messages for a conversation
+          content:
+            application/json:
+              schema:
+                type: array
+```
+
+**Produce**
+
+```sh
+message:conv1:0000000001;{ "text": "hello" }
+message:conv1:0000000002;{ "text": "how are you?" }
+message:conv2:0000000001;{ "text": "different conversation" }
+```
+
+**Query**
+
+```sh
+curl "localhost:7001/conversations/conv1/messages" | jq
+
+[
+  { "text": "hello" },
+  { "text": "how are you?" }
+]
+```
+
+A prefix with no matches returns `[]`.
+
+For a complete, runnable walkthrough — listing conversations, fetching one, and replaying its
+messages from a single topic — see [`examples/conversation-store`](examples/conversation-store).
+
+## Get a range of items
+
+The `range` query method returns every entry whose key falls within an inclusive `[from, to]`
+window, ordered by the key. It is ideal for paginating or windowing append-log data — for example,
+fetching a slice of a conversation transcript stored under keys like `message:<conversationId>:<offset>`.
+
+> **Keys must be `string`.** Like `prefix`, range scans rely on the lexicographic ordering of the
+> serialized key bytes; Avro keys are rejected. Pad numeric components to a fixed width
+> (e.g. `0000000010`) so they sort numerically.
+
+**Config**
+
+```yaml
+kafka:
+  application.id: kafka-streams-101
+  bootstrap.servers: localhost:9092
+
+paths:
+  /conversations/{conversationId}/messages/{from}/{to}:
+    parameters:
+    - name: conversationId
+      in: path
+      description: the conversation identifier
+    - name: from
+      in: path
+      description: start offset (zero-padded, inclusive)
+    - name: to
+      in: path
+      description: end offset (zero-padded, inclusive)
+    get:
+      kafka:
+        topic: conversation-store
+        query:
+          method: range
+          # Quote values that contain ':' (a YAML mapping indicator)
+          from: "message:${parameters.conversationId}:${parameters.from}"
+          to: "message:${parameters.conversationId}:${parameters.to}"
+        serializer:
+          key: string
+          value: string
+      responses:
+        '200':
+          description: A range of messages
+          content:
+            application/json:
+              schema:
+                type: array
+```
+
+**Query**
+
+```sh
+curl "localhost:7001/conversations/conv1/messages/0000000001/0000000002" | jq
+
+[
+  { "role": "user", "text": "hello" },
+  { "role": "assistant", "text": "how are you?" }
+]
+```
+
+Both bounds are inclusive. An empty window returns `[]`.
+
+For a complete, runnable walkthrough of windowing a conversation's messages, see
+[`examples/conversation-store-range`](examples/conversation-store-range).
+
 # Performance Benchmarks
 
 We ran some load tests to see how the system performs with real-world data volumes and access patterns.
@@ -134,6 +267,8 @@ Also, the results will vary based on hardware, query method, and disk type.
 |--|--|
 | List all items | ✅
 | Get single item | ✅
+| Get items by key prefix | ✅
+| Get range of items | ✅
 
 
 **Data Type (Key)**

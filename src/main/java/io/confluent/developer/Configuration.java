@@ -63,6 +63,7 @@ public class Configuration {
         private boolean includeType = false;
         private boolean includeKey = false;
         private String keyField;
+        private Map<String, String> keyFields;
 
         public String getTopic() { return topic; }
         public void setTopic(String topic) { this.topic = topic; }
@@ -78,16 +79,34 @@ public class Configuration {
         public void setIncludeKey(boolean includeKey) { this.includeKey = includeKey; }
         public String getKeyField() { return keyField; }
         public void setKeyField(String keyField) { this.keyField = keyField; }
+        public Map<String, String> getKeyFields() { return keyFields; }
+        public void setKeyFields(Map<String, String> keyFields) { this.keyFields = keyFields; }
+        
+        /**
+         * Check if this config uses composite (multiple) key fields
+         */
+        public boolean hasCompositeKey() {
+            return keyFields != null && !keyFields.isEmpty();
+        }
     }
 
     public static class QueryConfig {
         private String method;
         private String key;
+        private String from;
+        private String to;
+        private String prefix;
 
         public String getMethod() { return method; }
         public void setMethod(String method) { this.method = method; }
         public String getKey() { return key; }
         public void setKey(String key) { this.key = key; }
+        public String getFrom() { return from; }
+        public void setFrom(String from) { this.from = from; }
+        public String getTo() { return to; }
+        public void setTo(String to) { this.to = to; }
+        public String getPrefix() { return prefix; }
+        public void setPrefix(String prefix) { this.prefix = prefix; }
     }
 
     public static class SerializerConfig {
@@ -158,7 +177,7 @@ public class Configuration {
                     throw new IllegalArgumentException("Only GET methods are supported. Found: " + method + " for path: " + pathConfig.getPath());
                 }
 
-                validateKafkaInPath(path, methodConfig);
+                validateKafkaInPath(path, methodConfig, pathConfig);
                 validateResponses(pathConfig, methodConfig);
                 validateStateStoreQuery(pathConfig, methodConfig);
             }
@@ -220,25 +239,60 @@ public class Configuration {
         if ("all".equalsIgnoreCase(queryMethod)) {
             return;
         }
-    
+
+        // The 'range' method scans a contiguous key range and needs `from`/`to` bounds instead of a single key
+        if ("range".equalsIgnoreCase(queryMethod)) {
+            String from = queryConfig.getFrom();
+            String to = queryConfig.getTo();
+            if (from == null || from.isEmpty()) {
+                throw new IllegalArgumentException("`kafka.query.from` is required when `kafka.query.method` is 'range' for path: " + pathConfig.getPath());
+            }
+            if (to == null || to.isEmpty()) {
+                throw new IllegalArgumentException("`kafka.query.to` is required when `kafka.query.method` is 'range' for path: " + pathConfig.getPath());
+            }
+            validateParameterReferences(pathConfig, from, "kafka.query.from");
+            validateParameterReferences(pathConfig, to, "kafka.query.to");
+            return;
+        }
+
+        // The 'prefix' method scans all keys sharing a common prefix and needs a `prefix` template
+        if ("prefix".equalsIgnoreCase(queryMethod)) {
+            String prefix = queryConfig.getPrefix();
+            if (prefix == null || prefix.isEmpty()) {
+                throw new IllegalArgumentException("`kafka.query.prefix` is required when `kafka.query.method` is 'prefix' for path: " + pathConfig.getPath());
+            }
+            validateParameterReferences(pathConfig, prefix, "kafka.query.prefix");
+            return;
+        }
+
         String queryKey = queryConfig.getKey();
 
         if (queryKey == null) {
             throw new IllegalArgumentException("Query key is missing in Kafka config for path: " + queryConfig);
         }
-        
-        if (queryKey.contains("${parameters.")) {
-            String paramName = queryKey.substring(queryKey.indexOf("${parameters.") + 13, queryKey.indexOf("}"));
-            boolean found = false;
 
-            for (ParameterConfig param : pathConfig.getParameters()) {
-                if (param.getName().equals(paramName)) {
-                    found = true;
-                    break;
+        validateParameterReferences(pathConfig, queryKey, "kafka.query.key");
+    }
+
+    private static final java.util.regex.Pattern PARAM_PATTERN =
+            java.util.regex.Pattern.compile("\\$\\{parameters\\.([^}]+)\\}");
+
+    // Verifies that every ${parameters.X} placeholder in a key template refers to a declared path parameter
+    private void validateParameterReferences(PathConfig pathConfig, String template, String fieldLabel) {
+        java.util.regex.Matcher matcher = PARAM_PATTERN.matcher(template);
+        while (matcher.find()) {
+            String paramName = matcher.group(1);
+            boolean found = false;
+            if (pathConfig.getParameters() != null) {
+                for (ParameterConfig param : pathConfig.getParameters()) {
+                    if (param.getName().equals(paramName)) {
+                        found = true;
+                        break;
+                    }
                 }
             }
             if (!found) {
-                throw new IllegalArgumentException("Parameter " + paramName + " used in `kafka.query.key` is not defined in path parameters for path: " + pathConfig.getPath());
+                throw new IllegalArgumentException("Parameter " + paramName + " used in `" + fieldLabel + "` is not defined in path parameters for path: " + pathConfig.getPath());
             }
         }
     }
@@ -270,7 +324,7 @@ public class Configuration {
         }
     }
 
-    private void validateKafkaInPath(String path, MethodConfig methodConfig) {
+    private void validateKafkaInPath(String path, MethodConfig methodConfig, PathConfig pathConfig) {
         KafkaConfig kafka = methodConfig.getKafka();
         if (kafka == null) {
             throw new IllegalArgumentException("`kafka` configuration is missing for path: " + path);
@@ -286,10 +340,11 @@ public class Configuration {
     
         // Check kafka.query.method
         String queryMethod = query.getMethod();
-        if (queryMethod == null || (!queryMethod.equals("get") && !queryMethod.equals("all"))) {
-            throw new IllegalArgumentException("`kafka.query.method` must be either 'get' or 'all' for path: " + path);
+        if (queryMethod == null || (!queryMethod.equals("get") && !queryMethod.equals("all")
+                && !queryMethod.equals("range") && !queryMethod.equals("prefix"))) {
+            throw new IllegalArgumentException("`kafka.query.method` must be one of 'get', 'all', 'range', or 'prefix' for path: " + path);
         }
-    
+
         // Check kafka.serializer
         SerializerConfig serializer = kafka.getSerializer();
         // Check kafka.serializer.key
@@ -297,13 +352,53 @@ public class Configuration {
         if (keySerializer == null || (!keySerializer.equals("string") && !keySerializer.equals("avro"))) {
             throw new IllegalArgumentException("`kafka.serializer.key` must be set and is one of 'string' or 'avro' for path: " + path);
         }
-        
-        // If key serializer is avro, keyField must be set
+
+        // Range and prefix scans rely on lexicographic ordering of the serialized key bytes. Avro's binary
+        // encoding (length-prefixed strings, zig-zag varint numbers) is not order/prefix-preserving, so
+        // both are string-only.
+        if (("range".equals(queryMethod) || "prefix".equals(queryMethod)) && !"string".equals(keySerializer)) {
+            throw new IllegalArgumentException(
+                "`kafka.serializer.key` must be 'string' when `kafka.query.method` is '" + queryMethod + "' for path: " + path);
+        }
+
+        // If key serializer is avro, either keyField or keyFields must be set
         if ("avro".equalsIgnoreCase(keySerializer)) {
-            String keyField = kafka.getKeyField();
-            if (keyField == null || keyField.isEmpty()) {
+            boolean hasKeyField = kafka.getKeyField() != null && !kafka.getKeyField().isEmpty();
+            boolean hasKeyFields = kafka.getKeyFields() != null && !kafka.getKeyFields().isEmpty();
+            
+            if (!hasKeyField && !hasKeyFields) {
                 throw new IllegalArgumentException(
-                    "`kafka.keyField` must be set when `kafka.serializer.key` is 'avro' for path: " + path);
+                    "`kafka.keyField` or `kafka.keyFields` must be set when `kafka.serializer.key` is 'avro' for path: " + path);
+            }
+            
+            if (hasKeyField && hasKeyFields) {
+                throw new IllegalArgumentException(
+                    "Cannot specify both `kafka.keyField` and `kafka.keyFields`. Use one or the other for path: " + path);
+            }
+            
+            // Validate keyFields mappings reference valid path parameters
+            if (hasKeyFields) {
+                Set<String> definedParams = new HashSet<>();
+                if (pathConfig.getParameters() != null) {
+                    for (ParameterConfig param : pathConfig.getParameters()) {
+                        definedParams.add(param.getName());
+                    }
+                }
+                
+                for (Map.Entry<String, String> entry : kafka.getKeyFields().entrySet()) {
+                    String valueTemplate = entry.getValue();
+                    if (valueTemplate.contains("${parameters.")) {
+                        String paramName = valueTemplate.substring(
+                            valueTemplate.indexOf("${parameters.") + 13, 
+                            valueTemplate.indexOf("}")
+                        );
+                        if (!definedParams.contains(paramName)) {
+                            throw new IllegalArgumentException(
+                                "Parameter '" + paramName + "' used in keyFields mapping for key '" + 
+                                entry.getKey() + "' is not defined in path parameters for path: " + path);
+                        }
+                    }
+                }
             }
         }
     
@@ -379,9 +474,22 @@ public class Configuration {
             kafkaConfig.setIncludeKey((Boolean) kafkaData.get("includeKey"));
         }
         
-        // Parse keyField if present (required when key serializer is avro)
+        // Parse keyField if present (single key field - backward compatibility)
         if (kafkaData.containsKey("keyField")) {
             kafkaConfig.setKeyField((String) kafkaData.get("keyField"));
+        }
+        
+        // Parse keyFields if present (multiple key fields for composite keys)
+        if (kafkaData.containsKey("keyFields")) {
+            Object keyFieldsObj = kafkaData.get("keyFields");
+            if (keyFieldsObj instanceof Map) {
+                Map<String, String> keyFields = new LinkedHashMap<>();
+                Map<String, Object> keyFieldsMap = (Map<String, Object>) keyFieldsObj;
+                for (Map.Entry<String, Object> entry : keyFieldsMap.entrySet()) {
+                    keyFields.put(entry.getKey(), entry.getValue().toString());
+                }
+                kafkaConfig.setKeyFields(keyFields);
+            }
         }
         
         return kafkaConfig;
@@ -392,6 +500,9 @@ public class Configuration {
         if (queryData != null) {
             queryConfig.setMethod((String) queryData.get("method"));
             queryConfig.setKey((String) queryData.get("key"));
+            queryConfig.setFrom((String) queryData.get("from"));
+            queryConfig.setTo((String) queryData.get("to"));
+            queryConfig.setPrefix((String) queryData.get("prefix"));
         }
         return queryConfig;
     }

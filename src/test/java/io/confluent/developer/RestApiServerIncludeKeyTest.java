@@ -2,6 +2,7 @@ package io.confluent.developer;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.kafka.common.serialization.Serializer;
 import org.apache.kafka.streams.KafkaStreams;
 import org.apache.kafka.streams.KeyValue;
 import org.apache.kafka.streams.state.KeyValueIterator;
@@ -172,6 +173,111 @@ public class RestApiServerIncludeKeyTest {
         assertEquals("hi", body.get("text").asText());
     }
 
+    @Test
+    public void testIncludeKeyOnRange(@TempDir Path tempDir) throws Exception {
+        String rangeYaml =
+            "kafka:\n" +
+            "  application.id: kafka-streams-101\n" +
+            "  bootstrap.servers: localhost:9092\n" +
+            "  schema.registry.url: http://localhost:8081\n" +
+            "paths:\n" +
+            "  /conversations/{conversationId}/messages/{from}/{to}:\n" +
+            "    parameters:\n" +
+            "    - name: conversationId\n" +
+            "      in: path\n" +
+            "      description: the conversation id\n" +
+            "    - name: from\n" +
+            "      in: path\n" +
+            "      description: start offset\n" +
+            "    - name: to\n" +
+            "      in: path\n" +
+            "      description: end offset\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: conversation-store\n" +
+            "        query:\n" +
+            "          method: range\n" +
+            "          from: \"message:${parameters.conversationId}:${parameters.from}\"\n" +
+            "          to: \"message:${parameters.conversationId}:${parameters.to}\"\n" +
+            "        serializer:\n" +
+            "          key: string\n" +
+            "          value: string\n" +
+            "        includeKey: true\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: A range of messages\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n";
+
+        FakeKeyValueStore store = new FakeKeyValueStore();
+        store.put("message:conv1:0000000001", "{\"text\":\"hello\"}");
+        store.put("message:conv1:0000000002", "{\"text\":\"how are you?\"}");
+        store.put("message:conv1:0000000010", "{\"text\":\"much later\"}");
+
+        startServer(config(tempDir, "range-includekey.yaml", rangeYaml), store);
+
+        HttpResponse<String> response = get("/conversations/conv1/messages/0000000001/0000000002");
+        assertEquals(200, response.statusCode());
+
+        JsonNode body = MAPPER.readTree(response.body());
+        assertEquals(2, body.size());
+        // Each element in the window carries its own key, in order.
+        assertEquals("message:conv1:0000000001", body.get(0).get("key").asText());
+        assertEquals("hello", body.get(0).get("text").asText());
+        assertEquals("message:conv1:0000000002", body.get(1).get("key").asText());
+        assertEquals("how are you?", body.get(1).get("text").asText());
+    }
+
+    @Test
+    public void testIncludeKeyOnPrefix(@TempDir Path tempDir) throws Exception {
+        String prefixYaml =
+            "kafka:\n" +
+            "  application.id: kafka-streams-101\n" +
+            "  bootstrap.servers: localhost:9092\n" +
+            "  schema.registry.url: http://localhost:8081\n" +
+            "paths:\n" +
+            "  /conversations/{conversationId}/messages:\n" +
+            "    parameters:\n" +
+            "    - name: conversationId\n" +
+            "      in: path\n" +
+            "      description: the conversation id\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: conversation-store\n" +
+            "        query:\n" +
+            "          method: prefix\n" +
+            "          prefix: \"message:${parameters.conversationId}:\"\n" +
+            "        serializer:\n" +
+            "          key: string\n" +
+            "          value: string\n" +
+            "        includeKey: true\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: All messages for a conversation\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n";
+
+        FakeKeyValueStore store = new FakeKeyValueStore();
+        store.put("message:conv1:0000000001", "{\"text\":\"hello\"}");
+        store.put("message:conv1:0000000002", "{\"text\":\"how are you?\"}");
+        store.put("message:conv2:0000000001", "{\"text\":\"other\"}");
+
+        startServer(config(tempDir, "prefix-includekey.yaml", prefixYaml), store);
+
+        HttpResponse<String> response = get("/conversations/conv1/messages");
+        assertEquals(200, response.statusCode());
+
+        JsonNode body = MAPPER.readTree(response.body());
+        // Only conv1's messages, each carrying its key; conv2 excluded.
+        assertEquals(2, body.size());
+        assertEquals("message:conv1:0000000001", body.get(0).get("key").asText());
+        assertEquals("message:conv1:0000000002", body.get(1).get("key").asText());
+    }
+
     static class FakeKeyValueStore implements ReadOnlyKeyValueStore<Object, Object> {
         private final TreeMap<String, String> data = new TreeMap<>();
 
@@ -188,6 +294,19 @@ public class RestApiServerIncludeKeyTest {
         public KeyValueIterator<Object, Object> range(Object from, Object to) {
             List<KeyValue<Object, Object>> entries = new ArrayList<>();
             for (var e : data.subMap((String) from, true, (String) to, true).entrySet()) {
+                entries.add(new KeyValue<>(e.getKey(), e.getValue()));
+            }
+            return new ListIterator(entries);
+        }
+
+        @Override
+        public <PS extends Serializer<P>, P> KeyValueIterator<Object, Object> prefixScan(P prefix, PS prefixKeySerializer) {
+            String p = (String) prefix;
+            List<KeyValue<Object, Object>> entries = new ArrayList<>();
+            for (var e : data.tailMap(p, true).entrySet()) {
+                if (!e.getKey().startsWith(p)) {
+                    break;
+                }
                 entries.add(new KeyValue<>(e.getKey(), e.getValue()));
             }
             return new ListIterator(entries);

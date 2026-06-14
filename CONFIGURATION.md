@@ -88,6 +88,29 @@ kafka:
   keyField: productId
 ```
 
+#### query
+
+Default: Object (required)
+
+Defines how data is retrieved from the state store. `query.method` is one of:
+
+| Method | Returns | Required fields |
+|--|--|--|
+| `all` | every entry in the store | — |
+| `get` | a single entry by key | `key` |
+| `prefix` | every entry whose key starts with a prefix, ordered by key | `prefix` |
+| `range` | every entry within an inclusive `[from, to]` key window, ordered by key | `from`, `to` |
+
+`key`, `prefix`, `from`, and `to` are templates that may embed path parameters with
+`${parameters.<name>}`, for example `message:${parameters.conversationId}:`. Quote the value in YAML
+if it contains a `:` (e.g. `prefix: "message:${parameters.conversationId}:"`), since `:` is a YAML
+mapping indicator.
+
+`prefix` and `range` require `serializer.key: string`. Both depend on the lexicographic ordering of
+the serialized key bytes, and Avro's binary encoding is not order/prefix-preserving, so Avro keys are
+rejected for them. Pad numeric key components to a fixed width (e.g. `0000000010`) so they sort
+numerically rather than lexicographically.
+
 #### mergeKey
 
 Default: false
@@ -124,9 +147,38 @@ if `mergeKey=false` then it will return
 
 Default: null
 
-This is required if serializer is avro.
+`keyField` is required if key serializer is avro.
 
 If key is an avro, then it requires a key field to look up the value. For example, if `keyField=productId` and the path is `/products/{id}`, then it looks up using key `{"productId": "{id}"}`. 
+
+#### keyFields
+
+Default: []
+
+The list of multiple key fields used for looking up avro keys.
+
+Either `keyField` or `keyFields` is required if key serializer is avro, and both cannot be set simultaneously for each path.
+
+
+```sh
+  /aggregation/5min/{productId}/{windowStart}:
+    parameters:
+    - name: productId
+      in: path
+      description: the product id
+    - name: windowStart
+      in: path
+      description: the start window of product purchase
+    get:
+      kafka:
+        topic: orders_5min_realtime
+        serializer:
+          key: avro
+          value: avro
+        keyFields:
+          product_id: ${parameters.productId}
+          bucket_start: ${parameters.windowStart}
+```
 
 
 #### includeType

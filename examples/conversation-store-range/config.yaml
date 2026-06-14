@@ -1,0 +1,79 @@
+---
+# Conversation store — range example.
+#
+# Same single-topic data model as examples/conversation-store, but demonstrating the `range` query
+# method: fetching an inclusive [from, to] window of a conversation's messages. This is the building
+# block for pagination ("messages 20-40") or replaying a slice of a transcript.
+#
+#   message:<id>:<paddedOffset>  -> a message  {"role": ..., "text": ...}
+#
+# Endpoints:
+#   GET /conversations/{id}                          -> one conversation's metadata (get)
+#   GET /conversations/{id}/messages/{from}/{to}     -> inclusive [from, to] window (range)
+#
+# Offsets are zero-padded to a fixed width so they sort numerically; without padding "10" would sort
+# before "2". Keys must be `string` — Avro's binary encoding is not order-preserving, so range
+# rejects Avro keys at config-load time.
+
+kafka:
+  application.id: conversation-store-range-example
+  bootstrap.servers: localhost:9092
+  # Required to construct the client even when keys/values are strings (no schema lookups occur).
+  schema.registry.url: http://localhost:8081
+
+paths:
+  # One conversation's metadata (for context)
+  /conversations/{conversationId}:
+    parameters:
+    - name: conversationId
+      in: path
+      description: the conversation identifier
+    get:
+      description: Get one conversation's metadata
+      kafka:
+        topic: conversation-store
+        query:
+          method: get
+          key: "conversation:${parameters.conversationId}"
+        serializer:
+          key: string
+          value: string
+      responses:
+        '200':
+          description: A single conversation
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # A window of messages by inclusive [from, to] offset
+  /conversations/{conversationId}/messages/{from}/{to}:
+    parameters:
+    - name: conversationId
+      in: path
+      description: the conversation identifier
+    - name: from
+      in: path
+      description: start offset (zero-padded, inclusive)
+    - name: to
+      in: path
+      description: end offset (zero-padded, inclusive)
+    get:
+      description: Fetch an inclusive window of messages
+      kafka:
+        topic: conversation-store
+        query:
+          method: range
+          # Quote values that contain ':' (a YAML mapping indicator)
+          from: "message:${parameters.conversationId}:${parameters.from}"
+          to: "message:${parameters.conversationId}:${parameters.to}"
+        serializer:
+          key: string
+          value: string
+      responses:
+        '200':
+          description: A range of messages
+          content:
+            application/json:
+              schema:
+                type: array
