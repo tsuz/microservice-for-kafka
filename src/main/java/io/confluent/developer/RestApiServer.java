@@ -8,6 +8,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -91,6 +92,25 @@ public class RestApiServer {
         }
     }
 
+    /**
+     * Add CORS headers to the HTTP response
+     */
+    private static void addCorsHeaders(HttpExchange exchange) {
+        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, HEAD, PATCH");
+        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "*");
+        exchange.getResponseHeaders().set("Access-Control-Max-Age", "86400"); // 24 hours
+    }
+
+    /**
+     * Handle OPTIONS preflight request
+     */
+    private static void handleOptionsRequest(HttpExchange exchange) throws IOException {
+        addCorsHeaders(exchange);
+        exchange.sendResponseHeaders(204, -1); // No content
+        exchange.close();
+    }
+
     private class AllPathsHandler implements HttpHandler {
         private final List<PathHandler> pathHandlers;
     
@@ -104,6 +124,12 @@ public class RestApiServer {
     
         @Override
         public void handle(HttpExchange exchange) throws IOException {
+            // Handle CORS preflight requests
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptionsRequest(exchange);
+                return;
+            }
+
             String path = exchange.getRequestURI().getPath();
             logger.info("Incoming path: {}", path);
     
@@ -121,6 +147,7 @@ public class RestApiServer {
         }
 
         private void sendResponse(HttpExchange exchange, String response, int statusCode) throws IOException {
+            addCorsHeaders(exchange);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(statusCode, responseBytes.length);
@@ -156,6 +183,12 @@ public class RestApiServer {
         }
     
         public void handle(HttpExchange exchange) throws IOException {
+            // Handle CORS preflight requests
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                handleOptionsRequest(exchange);
+                return;
+            }
+
             long startTime = System.nanoTime();
             String path = exchange.getRequestURI().getPath();
             
@@ -177,8 +210,7 @@ public class RestApiServer {
                         response = getAllValues(methodConfig);
                         statusCode = 200;
                     } else if ("get".equals(queryMethod)) {
-                        String key = resolveQueryKey(methodConfig.getKafka().getQuery().getKey(), pathParams);
-                        response = getValue(key, methodConfig);
+                        response = getValue(pathParams, methodConfig);
                         statusCode = (response != null) ? 200 : 404;
                     } else if ("range".equals(queryMethod)) {
                         String from = resolveQueryKey(methodConfig.getKafka().getQuery().getFrom(), pathParams);
@@ -224,6 +256,7 @@ public class RestApiServer {
         }
 
         private void sendResponse(HttpExchange exchange, String response, int statusCode) throws IOException {
+            addCorsHeaders(exchange);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             byte[] responseBytes = response.getBytes(StandardCharsets.UTF_8);
             exchange.sendResponseHeaders(statusCode, responseBytes.length);
@@ -400,7 +433,14 @@ public class RestApiServer {
             }
         }
 
-        private String getValue(String id, Configuration.MethodConfig methodConfig) throws IOException {
+        /**
+         * Get a single value by key. Now supports both single and composite Avro keys.
+         * 
+         * @param pathParams Map of path parameter names to their values
+         * @param methodConfig The method configuration
+         * @return JSON string of the value, or null if not found
+         */
+        private String getValue(Map<String, String> pathParams, Configuration.MethodConfig methodConfig) throws IOException {
             String storeName = methodConfig.getKafka().getTopic() + "-store";
             
             ReadOnlyKeyValueStore<Object, Object> keyValueStore =
@@ -408,34 +448,15 @@ public class RestApiServer {
 
             String keySerializer = methodConfig.getKafka().getSerializer().getKey();
 
-            Object key = id;
+            Object key;
             
-            // build a key for avro
+            // Build the key based on serializer type
             if ("avro".equalsIgnoreCase(keySerializer)) {
-                String keyField = methodConfig.getKafka().getKeyField();
-                
-                // Validate that keyField is present
-                if (keyField == null || keyField.isEmpty()) {
-                    throw new IllegalArgumentException(
-                        "keyField must be configured in kafka section when using Avro keys. " +
-                        "Example: kafka.keyField: productId"
-                    );
-                }
-                
-                String topic = methodConfig.getKafka().getTopic();
-                
-                try {
-                    key = AvroKeyBuilder.buildKey(
-                        schemaRegistryClient,
-                        topic, 
-                        keyField, 
-                        id
-                    );
-                    
-                } catch (Exception e) {
-                    logger.error("Failed to build Avro key with field '{}'", keyField, e);
-                    throw new IOException("Failed to build Avro key: " + e.getMessage(), e);
-                }
+                key = buildAvroKey(pathParams, methodConfig);
+            } else {
+                // For non-Avro keys (string), resolve the single query key
+                String queryKeyTemplate = methodConfig.getKafka().getQuery().getKey();
+                key = resolveQueryKey(queryKeyTemplate, pathParams);
             }
 
             Object value = keyValueStore.get(key);
@@ -447,6 +468,90 @@ public class RestApiServer {
                 return objectMapper.writeValueAsString(resultNode);
             }
             return null;
+        }
+        
+        /**
+         * Build an Avro key from path parameters.
+         * Supports both single keyField and composite keyFields configurations.
+         * 
+         * @param pathParams Map of path parameter names to their values
+         * @param methodConfig The method configuration
+         * @return GenericRecord representing the Avro key
+         */
+        private Object buildAvroKey(Map<String, String> pathParams, Configuration.MethodConfig methodConfig) throws IOException {
+            Configuration.KafkaConfig kafkaConfig = methodConfig.getKafka();
+            String topic = kafkaConfig.getTopic();
+            
+            try {
+                if (kafkaConfig.hasCompositeKey()) {
+                    // Handle composite key (multiple fields)
+                    Map<String, String> keyFieldValues = new LinkedHashMap<>();
+                    
+                    for (Map.Entry<String, String> fieldMapping : kafkaConfig.getKeyFields().entrySet()) {
+                        String avroFieldName = fieldMapping.getKey();
+                        String valueTemplate = fieldMapping.getValue();
+                        
+                        // Resolve the value template (e.g., "${parameters.productId}" -> actual value)
+                        String resolvedValue = resolveValueTemplate(valueTemplate, pathParams);
+                        keyFieldValues.put(avroFieldName, resolvedValue);
+                    }
+                    
+                    logger.debug("Building composite Avro key with fields: {}", keyFieldValues);
+                    
+                    return AvroKeyBuilder.buildKey(
+                        schemaRegistryClient,
+                        topic,
+                        keyFieldValues
+                    );
+                } else {
+                    // Handle single key field (backward compatibility)
+                    String keyField = kafkaConfig.getKeyField();
+                    
+                    if (keyField == null || keyField.isEmpty()) {
+                        throw new IllegalArgumentException(
+                            "keyField must be configured in kafka section when using Avro keys. " +
+                            "Example: kafka.keyField: productId"
+                        );
+                    }
+                    
+                    // Get the value from the query key template
+                    String queryKeyTemplate = methodConfig.getKafka().getQuery().getKey();
+                    String keyValue = resolveQueryKey(queryKeyTemplate, pathParams);
+                    
+                    logger.debug("Building single-field Avro key: {} = {}", keyField, keyValue);
+                    
+                    return AvroKeyBuilder.buildKey(
+                        schemaRegistryClient,
+                        topic,
+                        keyField,
+                        keyValue
+                    );
+                }
+            } catch (Exception e) {
+                logger.error("Failed to build Avro key", e);
+                throw new IOException("Failed to build Avro key: " + e.getMessage(), e);
+            }
+        }
+        
+        /**
+         * Resolve a value template by substituting path parameters.
+         * 
+         * @param template Template string like "${parameters.productId}" or a literal value
+         * @param pathParams Map of path parameter names to values
+         * @return The resolved value
+         */
+        private String resolveValueTemplate(String template, Map<String, String> pathParams) {
+            if (template == null) {
+                return null;
+            }
+            
+            String result = template;
+            for (Map.Entry<String, String> entry : pathParams.entrySet()) {
+                String placeholder = "${parameters." + entry.getKey() + "}";
+                result = result.replace(placeholder, entry.getValue());
+            }
+            
+            return result;
         }
     }
 }
