@@ -159,6 +159,35 @@ whereas if false, then it returns:
 }
 ```
 
+#### includeKey
+
+Default: false
+
+If set to true, the lookup key is added to each returned object under a `key` field. This applies to
+every query method (`all`, `get`, and any range/prefix scans). For example, the entry:
+
+```
+key:   message:conv1:0000000011
+value: {"role": "assistant", "text": "a brand new reply"}
+```
+
+is returned as:
+
+```json
+{
+    "role": "assistant",
+    "text": "a brand new reply",
+    "key": "message:conv1:0000000011"
+}
+```
+
+String keys are emitted as-is; structured (Avro) keys are serialized to their JSON form. If the value
+is not a JSON object (e.g. an array or scalar) the key cannot be attached and the value is returned
+unchanged.
+
+This differs from [`mergeKey`](#mergekey): `mergeKey` merges the fields of an Avro **key object** into
+the value, whereas `includeKey` adds the raw key itself under `key` and works for plain string keys.
+
 ### responses
 
 response object that conforms to the OpenAPI. This object does not have an effect on the functionality of this API.
