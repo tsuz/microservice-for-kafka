@@ -394,18 +394,50 @@ public class RestApiServer {
 
         private JsonNode processValue(KeyValue<Object, Object> entry, MethodConfig methodConfig) throws IOException {
             boolean mergeKey = methodConfig.getKafka().isMergeKey();
+            boolean includeKey = methodConfig.getKafka().isIncludeKey();
             String valueSerializer = methodConfig.getKafka().getSerializer().getValue();
             JsonNode valueNode = serialize(entry.value, valueSerializer, methodConfig);
 
-            if (!mergeKey) {
+            JsonNode result = valueNode;
+
+            if (mergeKey) {
+                String keySerializer = methodConfig.getKafka().getSerializer().getKey();
+                JsonNode keyNode = serialize(entry.key, keySerializer, methodConfig);
+                result = mergeKeyIntoValue(keyNode, valueNode);
+            }
+
+            // includeKey adds the raw lookup key under a "key" field. Unlike mergeKey (which merges an
+            // Avro key object's fields), this works for plain string keys and is applied to every query method.
+            if (includeKey) {
+                result = addKeyField(entry.key, result, methodConfig);
+            }
+
+            return result;
+        }
+
+        private JsonNode addKeyField(Object key, JsonNode valueNode, MethodConfig methodConfig) throws IOException {
+            if (!valueNode.isObject()) {
+                logger.warn("includeKey skipped - value is not a JSON object");
                 return valueNode;
             }
 
-            String keySerializer = methodConfig.getKafka().getSerializer().getKey();
-            JsonNode keyNode = serialize(entry.key, keySerializer, methodConfig);
-            JsonNode mergedNode = mergeKeyIntoValue(keyNode, valueNode);
+            // Don't clobber a "key" field that's already part of the payload.
+            if (valueNode.has("key")) {
+                logger.warn("includeKey skipped - value already has a 'key' field");
+                return valueNode;
+            }
 
-            return mergedNode;
+            com.fasterxml.jackson.databind.node.ObjectNode result = (com.fasterxml.jackson.databind.node.ObjectNode) valueNode;
+
+            // String keys are emitted as-is; structured (e.g. Avro) keys are serialized to their JSON form.
+            if (key instanceof String) {
+                result.put("key", (String) key);
+            } else {
+                String keySerializer = methodConfig.getKafka().getSerializer().getKey();
+                result.set("key", serialize(key, keySerializer, methodConfig));
+            }
+
+            return result;
         }
 
         private JsonNode mergeKeyIntoValue(JsonNode keyNode, JsonNode valueNode) {

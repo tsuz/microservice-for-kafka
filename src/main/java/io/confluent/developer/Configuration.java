@@ -61,6 +61,7 @@ public class Configuration {
         private SerializerConfig serializer;
         private boolean mergeKey = false;
         private boolean includeType = false;
+        private boolean includeKey = false;
         private String keyField;
         private Map<String, String> keyFields;
 
@@ -74,6 +75,8 @@ public class Configuration {
         public void setMergeKey(boolean mergeKey) { this.mergeKey = mergeKey; }
         public boolean isIncludeType() { return includeType; }
         public void setIncludeType(boolean includeType) { this.includeType = includeType; }
+        public boolean isIncludeKey() { return includeKey; }
+        public void setIncludeKey(boolean includeKey) { this.includeKey = includeKey; }
         public String getKeyField() { return keyField; }
         public void setKeyField(String keyField) { this.keyField = keyField; }
         public Map<String, String> getKeyFields() { return keyFields; }
@@ -464,6 +467,11 @@ public class Configuration {
         // Parse includeType if present (default: false)
         if (kafkaData.containsKey("includeType")) {
             kafkaConfig.setIncludeType((Boolean) kafkaData.get("includeType"));
+        }
+
+        // Parse includeKey if present (default: false) - adds the lookup key to the response under "key"
+        if (kafkaData.containsKey("includeKey")) {
+            kafkaConfig.setIncludeKey((Boolean) kafkaData.get("includeKey"));
         }
         
         // Parse keyField if present (single key field - backward compatibility)

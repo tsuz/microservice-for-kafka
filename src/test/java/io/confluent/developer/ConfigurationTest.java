@@ -1071,4 +1071,54 @@ public class ConfigurationTest {
         });
         assertTrue(exception.getMessage().contains("`kafka.serializer.key` must be 'string' when `kafka.query.method` is 'range' for path: /messages/{from}/{to}"));
     }
+
+    @Test
+    public void testIncludeKeyParsing(@TempDir Path tempDir) throws Exception {
+        Path configPath = tempDir.resolve("include-key-config.yaml");
+        Files.writeString(configPath,
+            "kafka:\n" +
+            "  application.id: kafka-streams-101\n" +
+            "  bootstrap.servers: localhost:9092\n" +
+            "\n" +
+            "paths:\n" +
+            "  /items:\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: items\n" +
+            "        query:\n" +
+            "          method: all\n" +
+            "        serializer:\n" +
+            "          key: string\n" +
+            "          value: string\n" +
+            "        includeKey: true\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: items\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n" +
+            "  /other:\n" +
+            "    get:\n" +
+            "      kafka:\n" +
+            "        topic: items\n" +
+            "        query:\n" +
+            "          method: all\n" +
+            "        serializer:\n" +
+            "          key: string\n" +
+            "          value: string\n" +
+            "      responses:\n" +
+            "        '200':\n" +
+            "          description: items\n" +
+            "          content:\n" +
+            "            application/json:\n" +
+            "              schema:\n" +
+            "                type: array\n"
+        );
+
+        Configuration config = Configuration.fromFile(configPath.toString());
+        assertTrue(config.getPaths().get("/items").getMethods().get("get").getKafka().isIncludeKey());
+        // Defaults to false when omitted
+        assertFalse(config.getPaths().get("/other").getMethods().get("get").getKafka().isIncludeKey());
+    }
 }
